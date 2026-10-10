@@ -1,0 +1,23 @@
+
+# Yocto generated files
+build/
+build-*/
+tmp/
+downloads/
+sstate-cache/
+
+# KAS generated checkout/build directories
+.kas/
+
+# Python temporary files
+__pycache__/
+*.pyc
+
+# Editor files
+.vscode/
+.idea/
+
+# Temporary files
+*.swp
+*.tmp
+*.log
