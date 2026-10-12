@@ -1,0 +1,31 @@
+
+# SecureEdge - Initial Yocto configuration for QEMU ARM64
+
+header:
+  version: 19
+
+machine: qemuarm64
+distro: poky
+
+target:
+  - secureedge-image-dev
+
+repos:
+  poky:
+    url: https://git.yoctoproject.org/poky
+    branch: scarthgap
+    commit: 4fb7016a07507683359ebd620f1951fd5ea44bfa
+    layers:
+      meta:
+      meta-poky:
+      meta-yocto-bsp:
+  secureedge-platform:
+    path: /workspace/meta-secureedge-platform
+local_conf_header:
+  secureedge-initial: |
+    CONF_VERSION = "2"
+    BB_NUMBER_THREADS = "6"
+    PARALLEL_MAKE = "-j 6"
+    DL_DIR = "/workspace/.kas/downloads"
+    SSTATE_DIR = "/workspace/.kas/sstate-cache"
+    EXTRA_IMAGE_FEATURES:append = " debug-tweaks"
