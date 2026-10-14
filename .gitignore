@@ -24,3 +24,7 @@ __pycache__/
 
 # Shell history
 .bash_history
+# Local C build artifacts
+
+/application/secureedge-agent/secureedge-agent
+/application/secureedge-agent/src/*.o

@@ -1,10 +1,14 @@
-
 SUMMARY = "SecureEdge industrial gateway agent"
-DESCRIPTION = "Initial C application for the SecureEdge embedded Linux platform."
+DESCRIPTION = "Modular C application for the SecureEdge embedded Linux platform."
 LICENSE = "CLOSED"
 
 SRC_URI = " \
-    file://secureedge-agent.c \
+    file://Makefile \
+    file://src/main.c \
+    file://src/agent.c \
+    file://src/logger.c \
+    file://include/agent.h \
+    file://include/logger.h \
     file://secureedge-agent.service \
 "
 
@@ -16,14 +20,21 @@ SYSTEMD_SERVICE:${PN} = "secureedge-agent.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 do_compile() {
-    ${CC} ${CFLAGS} ${LDFLAGS} secureedge-agent.c -o secureedge-agent
+    oe_runmake \
+        CC="${CC}" \
+        CPPFLAGS="${CPPFLAGS}" \
+        CFLAGS="${CFLAGS}" \
+        LDFLAGS="${LDFLAGS}"
 }
 
 do_install() {
     install -d ${D}${bindir}
-    install -m 0755 secureedge-agent ${D}${bindir}/secureedge-agent
+
+    install -m 0755 ${S}/secureedge-agent \
+        ${D}${bindir}/secureedge-agent
 
     install -d ${D}${systemd_system_unitdir}
+
     install -m 0644 ${WORKDIR}/secureedge-agent.service \
         ${D}${systemd_system_unitdir}/secureedge-agent.service
 }
