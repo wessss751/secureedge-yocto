@@ -8,8 +8,11 @@ IMAGE_INSTALL:append = " \
     bash \
     coreutils \
     iproute2 \
+    iproute2-ss \
     iputils \
     procps \
+    os-release \
+    secureedge-agent \
 "
 
 IMAGE_FEATURES += "ssh-server-dropbear"

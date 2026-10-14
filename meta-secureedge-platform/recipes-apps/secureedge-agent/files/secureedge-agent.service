@@ -1,0 +1,12 @@
+[Unit]
+Description=SecureEdge Industrial Gateway Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/secureedge-agent
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

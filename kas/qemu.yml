@@ -5,7 +5,7 @@ header:
   version: 19
 
 machine: qemuarm64
-distro: poky
+distro: secureedge
 
 target:
   - secureedge-image-dev
@@ -21,6 +21,8 @@ repos:
       meta-yocto-bsp:
   secureedge-platform:
     path: /workspace/meta-secureedge-platform
+  secureedge-distro:
+    path: /workspace/meta-secureedge-distro
 local_conf_header:
   secureedge-initial: |
     CONF_VERSION = "2"
