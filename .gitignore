@@ -28,3 +28,6 @@ __pycache__/
 
 /application/secureedge-agent/secureedge-agent
 /application/secureedge-agent/src/*.o
+# SecureEdge local test binaries
+/application/secureedge-agent/tests/test_sensor
+/application/secureedge-agent/tests/test_config
