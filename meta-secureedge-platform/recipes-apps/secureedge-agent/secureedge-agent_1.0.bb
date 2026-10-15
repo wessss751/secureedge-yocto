@@ -1,7 +1,7 @@
 SUMMARY = "SecureEdge industrial gateway agent"
 DESCRIPTION = "Modular C application for the SecureEdge embedded Linux platform."
 LICENSE = "CLOSED"
-
+DEPENDS += "mosquitto"
 SRC_URI = " \
     file://Makefile \
     file://src/main.c \
@@ -9,6 +9,10 @@ SRC_URI = " \
     file://src/logger.c \
     file://include/agent.h \
     file://include/logger.h \
+    file://src/sensor.c \
+    file://include/sensor.h \
+    file://src/mqtt_client.c \
+    file://include/mqtt_client.h \
     file://secureedge-agent.service \
 "
 
