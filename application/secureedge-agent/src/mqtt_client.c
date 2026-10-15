@@ -2,14 +2,16 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdatomic.h>
-
+#include <ctype.h>
+#include <string.h>
 #include <mosquitto.h>
 
 #include "mqtt_client.h"
 #include "logger.h"
 
-#define MQTT_TOPIC "secureedge/device01/telemetry"
+#define MQTT_TOPIC_SIZE 128
 
+static char mqtt_topic[MQTT_TOPIC_SIZE];
 static struct mosquitto *client = NULL;
 static atomic_bool connected = ATOMIC_VAR_INIT(false);
 static bool library_initialized = false;
@@ -52,14 +54,51 @@ static void on_disconnect(
 
     log_info("MQTT disconnected (code=%d)", result);
 }
-
-bool mqtt_client_init(const char *host, int port)
+static bool device_id_is_valid(const char *device_id)
 {
-    if (host == NULL || host[0] == '\0' ||
-        port <= 0 || port > 65535) {
+    if (device_id == NULL || device_id[0] == '\0') {
         return false;
     }
 
+    for (const unsigned char *p =
+             (const unsigned char *)device_id; *p != '\0'; ++p) {
+
+        if (!isalnum(*p) && *p != '-' && *p != '_') {
+            return false;
+        }
+    }
+
+    return true;
+
+}
+bool mqtt_client_init(
+    const char *host,
+    int port,
+    const char *device_id
+)
+{
+if (host == NULL || host[0] == '\0' ||
+    port <= 0 || port > 65535 ||
+    !device_id_is_valid(device_id)) {
+
+    log_info("Invalid MQTT configuration");
+    return false;
+    }
+    int topic_length = snprintf(
+    mqtt_topic,
+    sizeof(mqtt_topic),
+    "secureedge/%s/telemetry",
+    device_id
+);
+
+if (topic_length < 0 ||
+    (size_t)topic_length >= sizeof(mqtt_topic)) {
+
+    log_info("MQTT topic is too long");
+    return false;
+}
+
+log_info("MQTT topic configured: %s", mqtt_topic);
     int rc = mosquitto_lib_init();
 
     if (rc != MOSQ_ERR_SUCCESS) {
@@ -153,15 +192,14 @@ bool mqtt_client_publish(const sensor_data_t *data)
     }
 
     int rc = mosquitto_publish(
-        client,
-        NULL,
-        MQTT_TOPIC,
-        length,
-        payload,
-        0,
-        false
-    );
-
+       client,
+       NULL,
+       mqtt_topic,
+       length,
+       payload,
+       0,
+       false
+);
     if (rc != MOSQ_ERR_SUCCESS) {
         log_info("MQTT publish failed: %s",
                  mosquitto_strerror(rc));

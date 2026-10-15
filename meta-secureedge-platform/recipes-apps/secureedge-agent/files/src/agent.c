@@ -44,10 +44,10 @@ void agent_run(void)
     );
 
     bool mqtt_ready = mqtt_client_init(
-        config.mqtt_host,
-        config.mqtt_port
-    );
-
+    config.mqtt_host,
+    config.mqtt_port,
+    config.device_id
+);
     if (!mqtt_ready) {
         log_info("MQTT initialization failed; acquisition continues");
     }
