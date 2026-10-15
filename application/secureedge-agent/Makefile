@@ -11,7 +11,8 @@ SOURCES = \
     src/agent.c \
     src/logger.c \
     src/sensor.c \
-    src/mqtt_client.c
+    src/mqtt_client.c \
+    src/config.c
 OBJECTS = $(SOURCES:.c=.o)
 
 .PHONY: all clean

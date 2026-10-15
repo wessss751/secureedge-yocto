@@ -11,6 +11,14 @@ target:
   - secureedge-image-dev
 
 repos:
+  meta-openembedded:
+    url: https://git.openembedded.org/meta-openembedded
+    branch: scarthgap
+    commit: 0f00f8b9a21950640da8c5707343e5540133f86e
+    layers:
+      meta-oe:
+      meta-python:
+      meta-networking:
   poky:
     url: https://git.yoctoproject.org/poky
     branch: scarthgap

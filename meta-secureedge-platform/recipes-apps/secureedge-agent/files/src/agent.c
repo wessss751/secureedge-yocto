@@ -9,6 +9,7 @@
 #include "logger.h"
 #include "sensor.h"
 #include "mqtt_client.h"
+#include "config.h"
 
 static volatile sig_atomic_t keep_running = 1;
 
@@ -19,15 +20,33 @@ void agent_request_stop(void)
 
 void agent_run(void)
 {
-    const char *mqtt_host = getenv("SECUREEDGE_MQTT_HOST");
+    agent_config_t config;
 
-    if (mqtt_host == NULL || mqtt_host[0] == '\0') {
-        mqtt_host = "127.0.0.1";
+    const char *config_path = getenv("SECUREEDGE_CONFIG");
+
+    if (config_path == NULL || config_path[0] == '\0') {
+        config_path = "config/agent.conf";
+    }
+
+    if (!config_load(config_path, &config)) {
+        log_info("Configuration loading failed");
+        return;
     }
 
     log_info("Agent started. PID=%ld", (long)getpid());
 
-    bool mqtt_ready = mqtt_client_init(mqtt_host, 1883);
+    log_info(
+        "Configuration loaded: device=%s, broker=%s:%d, interval=%u s",
+        config.device_id,
+        config.mqtt_host,
+        config.mqtt_port,
+        config.sampling_interval
+    );
+
+    bool mqtt_ready = mqtt_client_init(
+        config.mqtt_host,
+        config.mqtt_port
+    );
 
     if (!mqtt_ready) {
         log_info("MQTT initialization failed; acquisition continues");
@@ -54,7 +73,7 @@ void agent_run(void)
             );
         }
 
-        sleep(5);
+        sleep(config.sampling_interval);
     }
 
     if (mqtt_ready) {

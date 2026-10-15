@@ -14,6 +14,9 @@ SRC_URI = " \
     file://src/mqtt_client.c \
     file://include/mqtt_client.h \
     file://secureedge-agent.service \
+    file://src/config.c \
+    file://include/config.h \
+    file://config/agent.conf \
 "
 
 S = "${WORKDIR}"
@@ -41,7 +44,11 @@ do_install() {
 
     install -m 0644 ${WORKDIR}/secureedge-agent.service \
         ${D}${systemd_system_unitdir}/secureedge-agent.service
+    install -d ${D}${sysconfdir}/secureedge
+
+    install -m 0644 ${S}/config/agent.conf \
+        ${D}${sysconfdir}/secureedge/agent.conf
 }
 
 FILES:${PN} += "${systemd_system_unitdir}/secureedge-agent.service"
-
+CONFFILES:${PN} += "${sysconfdir}/secureedge/agent.conf"
