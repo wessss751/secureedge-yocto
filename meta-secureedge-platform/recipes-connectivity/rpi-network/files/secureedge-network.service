@@ -1,0 +1,12 @@
+[Unit]
+Description=SecureEdge Raspberry Pi network startup
+Wants=systemd-networkd.service wpa_supplicant@wlan0.service
+After=systemd-networkd.service wpa_supplicant@wlan0.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

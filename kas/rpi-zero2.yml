@@ -1,0 +1,47 @@
+
+# SecureEdge - Yocto configuration for Raspberry Pi Zero 2 W (64-bit)
+header:
+  version: 19
+
+machine: raspberrypi0-2w-64
+distro: secureedge
+
+target:
+   - secureedge-image-rpi-dev
+repos:
+  meta-openembedded:
+    url: https://git.openembedded.org/meta-openembedded
+    branch: scarthgap
+    commit: 0f00f8b9a21950640da8c5707343e5540133f86e
+    layers:
+      meta-oe:
+      meta-python:
+      meta-networking:
+  meta-raspberrypi:
+    url: https://git.yoctoproject.org/meta-raspberrypi
+    branch: scarthgap
+    commit: 018d44467c4f09eb63f8ea5e86e85d755250cf89
+    layers:
+      .:
+  poky:
+    url: https://git.yoctoproject.org/poky
+    branch: scarthgap
+    commit: 4fb7016a07507683359ebd620f1951fd5ea44bfa
+    layers:
+      meta:
+      meta-poky:
+      meta-yocto-bsp:
+  secureedge-platform:
+    path: /workspace/meta-secureedge-platform
+  secureedge-distro:
+    path: /workspace/meta-secureedge-distro
+local_conf_header:
+  secureedge-initial: |
+    CONF_VERSION = "2"
+    BB_NUMBER_THREADS = "6"
+    PARALLEL_MAKE = "-j 6"
+    DL_DIR = "/workspace/.kas/downloads"
+    SSTATE_DIR = "/workspace/.kas/sstate-cache"
+    # Raspberry Pi proprietary Wi-Fi firmware - lab acceptance
+    LICENSE_FLAGS_ACCEPTED:append = " synaptics-killswitch"
+    EXTRA_IMAGE_FEATURES:append = " debug-tweaks"
