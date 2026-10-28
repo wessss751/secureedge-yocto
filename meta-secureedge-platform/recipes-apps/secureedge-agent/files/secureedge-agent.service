@@ -5,6 +5,7 @@ After=network.target
 [Service]
 Type=simple
 Environment=SECUREEDGE_CONFIG=/etc/secureedge/agent.conf
+EnvironmentFile=-/etc/secureedge/mqtt-tls.env
 ExecStart=/usr/bin/secureedge-agent
 Restart=on-failure
 RestartSec=5

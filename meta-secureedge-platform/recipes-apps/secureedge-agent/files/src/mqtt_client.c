@@ -7,6 +7,7 @@
 #include <mosquitto.h>
 
 #include "mqtt_client.h"
+#include <stdlib.h>
 #include "logger.h"
 
 #define MQTT_TOPIC_SIZE 128
@@ -119,6 +120,43 @@ log_info("MQTT topic configured: %s", mqtt_topic);
 
     mosquitto_connect_callback_set(client, on_connect);
     mosquitto_disconnect_callback_set(client, on_disconnect);
+
+    /* SECUREEDGE_OPTIONAL_MTLS_BEGIN */
+    /*
+     * Optional mTLS for a provisioned device.
+     * Keep legacy DEV/QEMU configuration working when the TLS switch is absent.
+     * Private-key bytes are never stored in environment variables: only paths.
+     */
+    const char *tls_mode = getenv("SECUREEDGE_MQTT_TLS");
+    if (tls_mode != NULL && strcmp(tls_mode, "1") == 0) {
+        const char *ca_file = getenv("SECUREEDGE_MQTT_CA");
+        const char *client_cert = getenv("SECUREEDGE_MQTT_CERT");
+        const char *client_key = getenv("SECUREEDGE_MQTT_KEY");
+
+        if (ca_file == NULL || ca_file[0] == '\0' ||
+            client_cert == NULL || client_cert[0] == '\0' ||
+            client_key == NULL || client_key[0] == '\0') {
+            log_info("MQTT TLS enabled but certificate paths are incomplete");
+            mqtt_client_cleanup();
+            return false;
+        }
+
+        int tls_rc = mosquitto_tls_set(client, ca_file, NULL,
+                                       client_cert, client_key, NULL);
+        if (tls_rc != MOSQ_ERR_SUCCESS) {
+            log_info("MQTT TLS setup failed: %s", mosquitto_strerror(tls_rc));
+            mqtt_client_cleanup();
+            return false;
+        }
+        /* The default server certificate and hostname verification stays enabled. */
+        log_info("MQTT TLS/mTLS configured for this device");
+    } else if (tls_mode != NULL && tls_mode[0] != '\0' &&
+               strcmp(tls_mode, "0") != 0) {
+        log_info("Invalid SECUREEDGE_MQTT_TLS: expected 0 or 1");
+        mqtt_client_cleanup();
+        return false;
+    }
+    /* SECUREEDGE_OPTIONAL_MTLS_END */
 
     /*
      * Retry after 5 seconds, increasing up to 30 seconds.

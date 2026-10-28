@@ -1,0 +1,7 @@
+# SecureEdge PROD - restricted maintenance privileges
+
+Cmnd_Alias SECUREEDGE_RESTART = /bin/systemctl restart secureedge-agent.service, /usr/bin/systemctl restart secureedge-agent.service
+
+Cmnd_Alias SECUREEDGE_LOGS = /bin/journalctl -u secureedge-agent.service -n 50 --no-pager, /usr/bin/journalctl -u secureedge-agent.service -n 50 --no-pager
+
+edgeadmin ALL=(root) NOPASSWD: SECUREEDGE_RESTART, SECUREEDGE_LOGS
