@@ -1,0 +1,15 @@
+header:
+  version: 19
+  includes:
+    - kas/rpi-zero2.yml
+
+repos:
+  meta-rauc:
+    url: https://github.com/rauc/meta-rauc.git
+    branch: scarthgap
+    layers:
+      .:
+
+local_conf_header:
+  secureedge_rauc: |
+    DISTRO_FEATURES:append = " rauc"

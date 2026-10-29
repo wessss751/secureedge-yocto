@@ -31,3 +31,8 @@ __pycache__/
 # SecureEdge local test binaries
 /application/secureedge-agent/tests/test_sensor
 /application/secureedge-agent/tests/test_config
+# External Yocto layers managed by KAS
+/poky/
+/meta-openembedded/
+/meta-raspberrypi/
+/meta-rauc/
