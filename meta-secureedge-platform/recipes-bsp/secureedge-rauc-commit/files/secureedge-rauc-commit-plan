@@ -1,0 +1,81 @@
+
+#!/usr/bin/env python3
+"""SecureEdge A/B confirmation planner.
+
+Offline decision logic only. Never modifies boot partitions.
+"""
+import argparse
+import sys
+
+PARTITIONS = {"system0": 2, "system1": 3}
+
+
+def confirmation_plan(
+    current, primary, candidate, tryboot, firmware_partition,
+    health_ok, tryboot_target=None
+):
+    if any(s not in PARTITIONS for s in (current, primary, candidate)):
+        raise ValueError("Unknown slot")
+
+    if current != candidate:
+        raise ValueError("Running slot is not the candidate")
+
+    if primary == candidate:
+        raise ValueError("Candidate is already primary")
+
+    if not tryboot:
+        raise ValueError("Not a tryboot session")
+
+    if firmware_partition != PARTITIONS[candidate]:
+        raise ValueError("Firmware boot partition mismatch")
+
+    if tryboot_target != candidate:
+        raise ValueError("Configured tryboot target mismatch")
+
+    if not health_ok:
+        raise ValueError("Healthcheck failed")
+
+    return {
+        "previous_primary": primary,
+        "new_primary": candidate,
+        "normal_partition": PARTITIONS[candidate],
+        "tryboot_partition": PARTITIONS[primary],
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--current", required=True)
+    parser.add_argument("--primary", required=True)
+    parser.add_argument("--candidate", required=True)
+    parser.add_argument("--tryboot-target", required=True)
+    parser.add_argument("--tryboot", choices=("0", "1"), required=True)
+    parser.add_argument("--firmware-partition", type=int, required=True)
+    parser.add_argument("--health-ok", choices=("0", "1"), required=True)
+    args = parser.parse_args()
+
+    try:
+        result = confirmation_plan(
+            current=args.current,
+            primary=args.primary,
+            candidate=args.candidate,
+            tryboot=args.tryboot == "1",
+            firmware_partition=args.firmware_partition,
+            health_ok=args.health_ok == "1",
+            tryboot_target=args.tryboot_target,
+        )
+    except ValueError as error:
+        print(f"CONFIRMATION_DENIED: {error}", file=sys.stderr)
+        return 1
+
+    print("CONFIRMATION_PLAN_ONLY")
+    print(f"previous_primary={result['previous_primary']}")
+    print(f"new_primary={result['new_primary']}")
+    print(f"normal_boot_partition={result['normal_partition']}")
+    print(f"tryboot_boot_partition={result['tryboot_partition']}")
+    print("NO_CHANGES_WRITTEN")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

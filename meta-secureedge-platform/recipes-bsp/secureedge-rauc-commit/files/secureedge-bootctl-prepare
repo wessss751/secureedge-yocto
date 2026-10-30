@@ -1,0 +1,136 @@
+
+#!/usr/bin/env python3
+"""SecureEdge BOOTCTL offline preparation.
+
+Never mounts or modifies a real boot partition.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+
+SLOTS = {"system0": 2, "system1": 3}
+
+
+def parse_autoboot(content):
+    sections = {}
+    section = None
+
+    for raw in content.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1]
+            if section not in ("all", "tryboot"):
+                raise ValueError("Unsupported section")
+            if section in sections:
+                raise ValueError("Duplicate section")
+            sections[section] = {}
+            continue
+
+        if section is None or line.count("=") != 1:
+            raise ValueError("Invalid configuration")
+
+        key, value = map(str.strip, line.split("=", 1))
+
+        if key in sections[section]:
+            raise ValueError("Duplicate key")
+        sections[section][key] = value
+
+    if set(sections) != {"all", "tryboot"}:
+        raise ValueError("Missing sections")
+
+    if sections["all"].get("tryboot_a_b") != "1":
+        raise ValueError("Invalid tryboot mode")
+
+    if set(sections["all"]) != {"tryboot_a_b", "boot_partition"}:
+        raise ValueError("Unexpected normal boot directives")
+
+    if set(sections["tryboot"]) != {"boot_partition"}:
+        raise ValueError("Unexpected tryboot directives")
+
+    normal = int(sections["all"]["boot_partition"])
+    trial = int(sections["tryboot"]["boot_partition"])
+
+    if {normal, trial} != {2, 3}:
+        raise ValueError("Invalid A/B partition mapping")
+
+    return normal, trial
+
+
+def prepare(content, expected_primary, candidate):
+    if expected_primary not in SLOTS or candidate not in SLOTS:
+        raise ValueError("Unknown slot")
+
+    if expected_primary == candidate:
+        raise ValueError("Candidate already primary")
+
+    normal, trial = parse_autoboot(content)
+
+    if normal != SLOTS[expected_primary]:
+        raise ValueError("Primary changed unexpectedly")
+
+    if trial != SLOTS[candidate]:
+        raise ValueError("Candidate not configured for tryboot")
+
+    new_content = (
+        "[all]\n"
+        "tryboot_a_b=1\n"
+        f"boot_partition={trial}\n\n"
+        "[tryboot]\n"
+        f"boot_partition={normal}\n"
+    )
+
+    return new_content
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--primary", required=True)
+    parser.add_argument("--candidate", required=True)
+    args = parser.parse_args()
+
+    source = Path(args.input)
+    destination = Path(args.output)
+
+    if not source.is_file() or source.is_symlink():
+        parser.error("Input must be a regular file")
+
+    if destination.exists() or destination.is_symlink():
+        parser.error("Output already exists")
+
+    if not destination.parent.is_dir():
+        parser.error("Output directory missing")
+
+    try:
+        content = source.read_text()
+        new_content = prepare(
+            content, args.primary, args.candidate
+        )
+    except (OSError, ValueError, UnicodeError) as exc:
+        parser.error(str(exc))
+
+    # Write a new offline artifact with exclusive creation.
+    with destination.open("x", encoding="utf-8") as stream:
+        stream.write(new_content)
+
+    print(json.dumps({
+        "mode": "OFFLINE_PREPARATION_ONLY",
+        "old_sha256": hashlib.sha256(
+            content.encode()
+        ).hexdigest(),
+        "new_sha256": hashlib.sha256(
+            new_content.encode()
+        ).hexdigest(),
+        "candidate": args.candidate,
+        "output": str(destination),
+        "bootctl_modified": False,
+    }, indent=2))
+
+
+if __name__ == "__main__":
+    main()
