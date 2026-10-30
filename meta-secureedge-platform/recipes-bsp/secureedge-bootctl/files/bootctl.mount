@@ -1,0 +1,11 @@
+[Unit]
+Description=SecureEdge read-only BOOTCTL partition
+
+[Mount]
+What=/dev/disk/by-label/BOOTCTL
+Where=/bootctl
+Type=vfat
+Options=ro,nosuid,nodev,noexec,umask=0077
+
+[Install]
+WantedBy=multi-user.target

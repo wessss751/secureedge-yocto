@@ -29,3 +29,7 @@ local_conf_header:
     do_image_wic[depends] += "secureedge-rauc-bootfiles:do_deploy"
   secureedge_persistent_data: |
     IMAGE_INSTALL:append = " secureedge-data"
+  secureedge_healthcheck: |
+    IMAGE_INSTALL:append = " secureedge-rauc-healthcheck"
+  secureedge_bootctl: |
+    IMAGE_INSTALL:append = " secureedge-bootctl secureedge-rauc-backend"

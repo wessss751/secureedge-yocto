@@ -1,0 +1,61 @@
+#!/bin/sh
+# SecureEdge RAUC trial-boot readiness check (read-only).
+# NEVER confirms a slot or changes boot configuration.
+set -eu
+
+fail() {
+    echo "secureedge-rauc-healthcheck: $*" >&2
+    exit 1
+}
+
+[ "$#" -eq 0 ] || fail "Usage: secureedge-rauc-healthcheck"
+
+BACKEND=/usr/sbin/secureedge-rauc-backend
+MOUNTS=/proc/mounts
+UNITS=/etc/secureedge/rauc-healthcheck.units
+SYSTEMCTL=systemctl
+
+# Test overrides are accepted only in explicit host-simulation mode.
+if [ "${SECUREEDGE_HEALTH_TEST_MODE:-0}" = "1" ]; then
+    BACKEND="${SECUREEDGE_HEALTH_BACKEND:-$BACKEND}"
+    MOUNTS="${SECUREEDGE_HEALTH_MOUNTS:-$MOUNTS}"
+    UNITS="${SECUREEDGE_HEALTH_UNITS:-$UNITS}"
+    SYSTEMCTL="${SECUREEDGE_HEALTH_SYSTEMCTL:-$SYSTEMCTL}"
+fi
+
+[ -x "$BACKEND" ] || fail "Backend not executable: $BACKEND"
+[ -r "$MOUNTS" ] || fail "Mount list unavailable"
+[ -f "$UNITS" ] && [ -r "$UNITS" ] || fail "Service list unavailable"
+[ ! -L "$UNITS" ] || fail "Service list cannot be a symlink"
+
+# A /data directory without a real ext4 mount must not count as healthy.
+awk '$2 == "/data" && $3 == "ext4" { found = 1 } END { exit !found }' "$MOUNTS" \
+    || fail "DATA is not mounted as ext4 at /data"
+
+# The backend checks firmware tryboot, boot partition, kernel root,
+# running RAUC slot, pending slot, and the recovery slot state.
+identity="$("$BACKEND" verify-tryboot)" || fail "tryboot identity verification failed"
+case "$identity" in
+    verified-tryboot=system0|verified-tryboot=system1) ;;
+    *) fail "Unexpected identity response" ;;
+esac
+
+# One service name per line. Missing configuration fails closed.
+checked=0
+while IFS= read -r unit || [ -n "$unit" ]; do
+    case "$unit" in
+        ''|\#*) continue ;;
+    esac
+    case "$unit" in
+        *[!A-Za-z0-9_.@-]*|-*) fail "Invalid unit name: $unit" ;;
+    esac
+    case "$unit" in
+        *.service) ;;
+        *) fail "Only .service units are supported: $unit" ;;
+    esac
+    "$SYSTEMCTL" is-active --quiet "$unit" || fail "Required service inactive: $unit"
+    checked=$((checked + 1))
+done < "$UNITS"
+
+[ "$checked" -gt 0 ] || fail "No critical service configured"
+printf 'health-ready=%s\n' "${identity#verified-tryboot=}"

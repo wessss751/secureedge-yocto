@@ -1,0 +1,17 @@
+[Unit]
+Description=SecureEdge RAUC trial boot health check (read-only)
+Requires=data.mount secureedge-data-init.service
+After=data.mount secureedge-data-init.service
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/secureedge-rauc-healthcheck
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/data
+
+# Deliberately not enabled at boot.
+[Install]
+WantedBy=multi-user.target

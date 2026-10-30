@@ -1,220 +1,280 @@
 #!/bin/sh
 
 set -eu
-
-BOOTCTL_DIR="${SECUREEDGE_BOOTCTL_DIR:-/run/secureedge-bootctl}"
+BOOTCTL_DIR="${SECUREEDGE_BOOTCTL_DIR:-/bootctl}"
 AUTOBOOT="$BOOTCTL_DIR/autoboot.txt"
 CMDLINE_FILE="${SECUREEDGE_CMDLINE_FILE:-/proc/cmdline}"
+STATE_DIR="${SECUREEDGE_STATE_DIR:-/data/secureedge-rauc/bootstate}"
 
-die() {
-    echo "secureedge-rauc-backend: $*" >&2
+fail() {
+    printf 'secureedge-rauc-backend: %s\n' "$*" >&2
     exit 1
 }
 
-# Read boot_partition from [all] or [tryboot].
-get_boot_partition() {
-    section="$1"
-
-    [ -r "$AUTOBOOT" ] || die "Cannot read $AUTOBOOT"
-
-    value="$(awk -F= -v wanted="[$section]" '
-        {
-            sub(/\r$/, "")
-            sub(/#.*/, "")
-        }
-
-        /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
-            gsub(/[[:space:]]/, "")
-            current = $0
-            next
-        }
-
-        current == wanted {
-            key = $1
-            val = $2
-
-            gsub(/[[:space:]]/, "", key)
-            gsub(/[[:space:]]/, "", val)
-
-            if (key == "boot_partition") {
-                print val
-                exit
-            }
-        }
-    ' "$AUTOBOOT")" || die "Cannot parse autoboot.txt"
-
-    [ -n "$value" ] || die "Missing boot_partition in [$section]"
-
-    printf '%s\n' "$value"
+# Strictly restrict external path overrides on real hardware.
+check_runtime_paths() {
+    if [ "${SECUREEDGE_TEST_MODE:-0}" = "1" ]; then
+        [ -n "${SECUREEDGE_BOOTCTL_DIR:-}" ] || fail "Test BOOTCTL directory required"
+        [ -n "${SECUREEDGE_STATE_DIR:-}" ] || fail "Test state directory required"
+        [ -n "${SECUREEDGE_CMDLINE_FILE:-}" ] || fail "Test cmdline file required"
+    else
+        [ "$BOOTCTL_DIR" = "/bootctl" ] || fail "BOOTCTL override forbidden"
+        [ "$CMDLINE_FILE" = "/proc/cmdline" ] || fail "Cmdline override forbidden"
+        [ "$STATE_DIR" = "/data/secureedge-rauc/bootstate" ] || fail "State override forbidden"
+    fi
 }
-
-# Convert firmware partition number to RAUC bootname.
-partition_to_bootname() {
-    case "$1" in
-        2) echo "system0" ;;
-        3) echo "system1" ;;
-        *) die "Unsupported boot partition: $1" ;;
-    esac
-}
-
-# Read the normal boot selection.
-get_primary() {
-    partition="$(get_boot_partition all)"
-    partition_to_bootname "$partition"
-}
-
-# Read the one-shot tryboot destination.
-get_tryboot_target() {
-    partition="$(get_boot_partition tryboot)"
-    partition_to_bootname "$partition"
-}
-
-# Determine the running slot from the kernel command line.
-get_current() {
-    [ -r "$CMDLINE_FILE" ] || die "Cannot read $CMDLINE_FILE"
-
-    set -f
-    for argument in $(cat "$CMDLINE_FILE"); do
-        case "$argument" in
-            rauc.slot=system0)
-                echo "system0"
-                return 0
-                ;;
-            rauc.slot=system1)
-                echo "system1"
-                return 0
-                ;;
-        esac
-    done
-
-    die "No valid rauc.slot found in kernel command line"
-}
-# Persistent boot state management - Phase 8.2
-
-STATE_DIR="${SECUREEDGE_STATE_DIR:-/data/secureedge-rauc/bootstate}"
 
 check_slot() {
     case "$1" in
-        system0|system1) return 0 ;;
-        *) die "Invalid slot: $1" ;;
+        system0|system1) ;;
+        *) fail "Invalid slot: $1" ;;
     esac
+}
+
+# Read exactly one value from the specified autoboot.txt section.
+read_autoboot_value() {
+    [ -f "$AUTOBOOT" ] && [ -r "$AUTOBOOT" ] || fail "Cannot read $AUTOBOOT"
+    [ ! -L "$AUTOBOOT" ] || fail "autoboot.txt must not be a symlink"
+
+    awk -F= -v wanted="[$1]" -v keywanted="$2" '
+        {
+            sub(/\r$/, "")
+            sub(/#.*/, "")
+            if ($0 ~ /^[[:space:]]*\[[^]]+\][[:space:]]*$/) {
+                gsub(/[[:space:]]/, "")
+                section = $0
+                next
+            }
+            if (section == wanted && index($0, "=") > 0) {
+                key = $1
+                val = substr($0, index($0, "=") + 1)
+                gsub(/[[:space:]]/, "", key)
+                gsub(/[[:space:]]/, "", val)
+                if (key == keywanted) {
+                    count++
+                    output = val
+                }
+            }
+        }
+        END {
+            if (count != 1 || output == "") exit 1
+            print output
+        }
+    ' "$AUTOBOOT" || fail "Missing or duplicate $2 in [$1]"
+}
+
+check_autoboot_mode() {
+    mode="$(read_autoboot_value all tryboot_a_b)"
+    [ "$mode" = "1" ] || fail "tryboot_a_b must be 1"
+}
+
+partition_to_bootname() {
+    case "$1" in
+        2) printf 'system0\n' ;;
+        3) printf 'system1\n' ;;
+        *) fail "Unsupported boot partition: $1" ;;
+    esac
+}
+
+get_primary() {
+    check_autoboot_mode
+    bootpart="$(read_autoboot_value all boot_partition)"
+    partition_to_bootname "$bootpart"
+}
+
+get_tryboot_target() {
+    check_autoboot_mode
+    bootpart="$(read_autoboot_value tryboot boot_partition)"
+    partition_to_bootname "$bootpart"
+}
+
+get_current() {
+    [ -f "$CMDLINE_FILE" ] && [ -r "$CMDLINE_FILE" ] || fail "Cannot read $CMDLINE_FILE"
+    found_slot=""
+    # Kernel cmdline is whitespace-separated; globbing is deliberately disabled.
+    set -f
+    for arg in $(cat "$CMDLINE_FILE"); do
+        case "$arg" in
+            rauc.slot=*)
+                [ -z "$found_slot" ] || fail "Duplicate rauc.slot argument"
+                found_slot="${arg#rauc.slot=}"
+                ;;
+        esac
+    done
+    [ -n "$found_slot" ] || fail "Missing rauc.slot argument"
+    check_slot "$found_slot"
+    printf '%s\n' "$found_slot"
 }
 
 check_state_storage() {
-    if [ "${SECUREEDGE_TEST_MODE:-0}" = "1" ]; then
-        [ -n "${SECUREEDGE_STATE_DIR:-}" ] ||
-            die "Missing test state directory"
-    else
-        [ "$STATE_DIR" = "/data/secureedge-rauc/bootstate" ] ||
-            die "Invalid production state directory"
-
-        awk '
-            $2 == "/data" && $3 == "ext4" { found = 1 }
-            END { exit !found }
-        ' /proc/mounts ||
-            die "DATA partition is not mounted"
+    if [ "${SECUREEDGE_TEST_MODE:-0}" != "1" ]; then
+        awk '$2 == "/data" && $3 == "ext4" { found=1 } END { exit !found }' \
+            /proc/mounts || fail "DATA is not mounted at /data as ext4"
     fi
-
-    [ -d "$STATE_DIR" ] ||
-        die "State directory not found: $STATE_DIR"
-
-    [ ! -L "$STATE_DIR" ] ||
-        die "State directory cannot be a symlink"
+    [ -d "$STATE_DIR" ] || fail "State directory missing: $STATE_DIR"
+    [ ! -L "$STATE_DIR" ] || fail "State directory symlink forbidden"
 }
 
 get_state() {
-    [ "$#" -eq 1 ] || die "Usage: get-state SLOT"
-
+    [ "$#" -eq 1 ] || fail "Usage: get-state SLOT"
     check_slot "$1"
     check_state_storage
-
     state_file="$STATE_DIR/$1"
-
-    [ -f "$state_file" ] ||
-        die "State file missing: $state_file"
-
-    [ ! -L "$state_file" ] ||
-        die "Symlink state file forbidden"
-
-    state="$(cat "$state_file")" ||
-        die "Cannot read state"
-
-    case "$state" in
-        good|bad) printf '%s\n' "$state" ;;
-        *) die "Invalid stored state: $state" ;;
+    [ -f "$state_file" ] && [ ! -L "$state_file" ] || fail "Invalid state file: $state_file"
+    stored_state="$(cat "$state_file")" || fail "Cannot read state file"
+    case "$stored_state" in
+        good|bad) printf '%s\n' "$stored_state" ;;
+        *) fail "Invalid stored state for $1" ;;
     esac
 }
 
+# Prototype state persistence. No locking / power-cut guarantees yet.
 set_state() {
-    [ "$#" -eq 2 ] ||
-        die "Usage: set-state SLOT good|bad"
-
+    [ "$#" -eq 2 ] || fail "Usage: set-state SLOT good|bad"
     check_slot "$1"
-
-    case "$2" in
-        good|bad) ;;
-        *) die "Invalid state: $2" ;;
-    esac
-
+    case "$2" in good|bad) ;; *) fail "Invalid state: $2" ;; esac
     check_state_storage
 
     target="$STATE_DIR/$1"
-
-    [ ! -L "$target" ] ||
-        die "Symlink target forbidden"
-
-    tmp="$(mktemp "$STATE_DIR/.state.XXXXXX")" ||
-        die "Cannot create temporary file"
-
-    trap 'rm -f "$tmp"' EXIT
-    trap 'exit 1' HUP INT TERM
-
-    printf '%s\n' "$2" > "$tmp" ||
-        die "Cannot write state"
-
-    chmod 0600 "$tmp" ||
-        die "Cannot set permissions"
-
+    [ ! -L "$target" ] || fail "State target symlink forbidden"
+    temp_file="$(mktemp "$STATE_DIR/.state.XXXXXX")" || fail "Cannot create temporary state"
+    trap 'rm -f "$temp_file"' 0
+    trap 'exit 1' 1 2 3 15
+    printf '%s\n' "$2" > "$temp_file" || fail "Cannot write state"
+    chmod 0600 "$temp_file" || fail "Cannot protect state"
     sync
-
-    mv -f "$tmp" "$target" ||
-        die "Cannot update state"
-
+    mv -f "$temp_file" "$target" || fail "Cannot commit state"
     sync
-
-    trap - EXIT HUP INT TERM
+    trap - 0 1 2 3 15
 }
+
+# Simulation only: record a candidate. Does NOT arrange a real tryboot reboot.
+set_primary() {
+    [ "$#" -eq 1 ] || fail "Usage: set-primary SLOT"
+    check_slot "$1"
+    [ "${SECUREEDGE_TEST_MODE:-0}" = "1" ] || fail "set-primary disabled outside simulation"
+    check_runtime_paths
+    check_state_storage
+
+    requested_slot="$1"
+    normal_slot="$(get_primary)"
+    trial_slot="$(get_tryboot_target)"
+    running_slot="$(get_current)"
+    [ "$normal_slot" != "$trial_slot" ] || fail "Normal and trial slots are identical"
+    [ "$running_slot" = "$normal_slot" ] || fail "Running slot is not the normal slot"
+    [ "$requested_slot" = "$trial_slot" ] || fail "Requested slot is not the inactive trial slot"
+    [ "$(get_state "$normal_slot")" = "good" ] || fail "Recovery slot is not good"
+
+    pending_file="$STATE_DIR/pending-slot"
+    [ ! -L "$pending_file" ] || fail "Pending state symlink forbidden"
+    temp_file="$(mktemp "$STATE_DIR/.pending.XXXXXX")" || fail "Cannot create pending state"
+    trap 'rm -f "$temp_file"' 0
+    trap 'exit 1' 1 2 3 15
+    printf '%s\n' "$requested_slot" > "$temp_file" || fail "Cannot write candidate"
+    chmod 0600 "$temp_file" || fail "Cannot protect candidate"
+    mv -f "$temp_file" "$pending_file" || fail "Cannot store candidate"
+    sync
+    trap - 0 1 2 3 15
+    printf 'Prepared trial slot: %s\n' "$requested_slot" >&2
+}
+
+# Firmware Device Tree values are 4-byte unsigned big-endian integers.
+read_fw_u32() {
+    fw_file="$1"
+    [ -f "$fw_file" ] && [ -r "$fw_file" ] || fail "Cannot read firmware property: $fw_file"
+    [ "$(wc -c < "$fw_file" | tr -d '[:space:]')" = "4" ] || fail "Invalid firmware property size"
+    fw_hex="$(od -An -v -tx1 "$fw_file" | tr -d '[:space:]')" || fail "Cannot decode firmware property"
+    [ "${#fw_hex}" -eq 8 ] || fail "Invalid firmware property encoding"
+    case "$fw_hex" in *[!0123456789abcdefABCDEF]*) fail "Invalid firmware hex data" ;; esac
+    printf '%d\n' "0x$fw_hex"
+}
+
+# Read-only diagnostic, not a RAUC standard backend action.
+verify_tryboot() {
+    [ "$#" -eq 0 ] || fail "Usage: verify-tryboot"
+    check_runtime_paths
+    firmware_dir="/proc/device-tree/chosen/bootloader"
+    if [ "${SECUREEDGE_TEST_MODE:-0}" = "1" ]; then
+        [ -n "${SECUREEDGE_FIRMWARE_DIR:-}" ] || fail "Simulation firmware directory required"
+        firmware_dir="$SECUREEDGE_FIRMWARE_DIR"
+    else
+        [ -z "${SECUREEDGE_FIRMWARE_DIR:-}" ] || fail "Firmware directory override forbidden"
+    fi
+    [ -d "$firmware_dir" ] || fail "Firmware directory missing"
+    check_state_storage
+
+    normal_slot="$(get_primary)"
+    trial_slot="$(get_tryboot_target)"
+    running_slot="$(get_current)"
+    pending_file="$STATE_DIR/pending-slot"
+    [ -f "$pending_file" ] && [ ! -L "$pending_file" ] || fail "Missing or invalid pending slot"
+    pending_slot="$(cat "$pending_file")" || fail "Cannot read pending slot"
+    check_slot "$pending_slot"
+
+    [ "$normal_slot" != "$trial_slot" ] || fail "Normal and trial slots identical"
+    [ "$running_slot" != "$normal_slot" ] || fail "Running normal slot: not a trial"
+    [ "$running_slot" = "$trial_slot" ] || fail "Running slot not trial target"
+    [ "$pending_slot" = "$running_slot" ] || fail "Pending slot mismatch"
+    [ "$(get_state "$normal_slot")" = "good" ] || fail "Recovery slot not good"
+
+    case "$running_slot" in
+        system0) expected_partition=2; expected_root="/dev/mmcblk0p5" ;;
+        system1) expected_partition=3; expected_root="/dev/mmcblk0p6" ;;
+        *) fail "Unsupported running slot" ;;
+    esac
+
+    kernel_root=""
+    set -f
+    for arg in $(cat "$CMDLINE_FILE"); do
+        case "$arg" in
+            root=*)
+                [ -z "$kernel_root" ] || fail "Duplicate root= argument"
+                kernel_root="${arg#root=}"
+                ;;
+        esac
+    done
+    [ "$kernel_root" = "$expected_root" ] || fail "Kernel root does not match slot"
+
+    firmware_tryboot="$(read_fw_u32 "$firmware_dir/tryboot")"
+    firmware_partition="$(read_fw_u32 "$firmware_dir/partition")"
+    [ "$firmware_tryboot" -eq 1 ] || fail "Firmware not in tryboot mode"
+    [ "$firmware_partition" -eq "$expected_partition" ] || fail "Firmware partition mismatch"
+
+    printf 'verified-tryboot=%s\n' "$running_slot"
+}
+
+check_runtime_paths
+
 case "${1:-}" in
     get-primary)
-        [ "$#" -eq 1 ] || die "Invalid arguments"
+        [ "$#" -eq 1 ] || fail "Usage: get-primary"
         get_primary
         ;;
-
     get-current)
-        [ "$#" -eq 1 ] || die "Invalid arguments"
+        [ "$#" -eq 1 ] || fail "Usage: get-current"
         get_current
         ;;
-
     get-tryboot-target)
-        [ "$#" -eq 1 ] || die "Invalid arguments"
+        [ "$#" -eq 1 ] || fail "Usage: get-tryboot-target"
         get_tryboot_target
         ;;
-
     get-state)
         shift
         get_state "$@"
         ;;
-
     set-state)
         shift
         set_state "$@"
         ;;
-
     set-primary)
-        die "set-primary not yet implemented"
+        shift
+        set_primary "$@"
         ;;
-
+    verify-tryboot)
+        shift
+        verify_tryboot "$@"
+        ;;
     *)
-        die "Unknown command: ${1:-empty}"
+        fail "Unknown command: ${1:-empty}"
         ;;
 esac
