@@ -1,0 +1,220 @@
+#!/bin/sh
+
+set -eu
+
+BOOTCTL_DIR="${SECUREEDGE_BOOTCTL_DIR:-/run/secureedge-bootctl}"
+AUTOBOOT="$BOOTCTL_DIR/autoboot.txt"
+CMDLINE_FILE="${SECUREEDGE_CMDLINE_FILE:-/proc/cmdline}"
+
+die() {
+    echo "secureedge-rauc-backend: $*" >&2
+    exit 1
+}
+
+# Read boot_partition from [all] or [tryboot].
+get_boot_partition() {
+    section="$1"
+
+    [ -r "$AUTOBOOT" ] || die "Cannot read $AUTOBOOT"
+
+    value="$(awk -F= -v wanted="[$section]" '
+        {
+            sub(/\r$/, "")
+            sub(/#.*/, "")
+        }
+
+        /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+            gsub(/[[:space:]]/, "")
+            current = $0
+            next
+        }
+
+        current == wanted {
+            key = $1
+            val = $2
+
+            gsub(/[[:space:]]/, "", key)
+            gsub(/[[:space:]]/, "", val)
+
+            if (key == "boot_partition") {
+                print val
+                exit
+            }
+        }
+    ' "$AUTOBOOT")" || die "Cannot parse autoboot.txt"
+
+    [ -n "$value" ] || die "Missing boot_partition in [$section]"
+
+    printf '%s\n' "$value"
+}
+
+# Convert firmware partition number to RAUC bootname.
+partition_to_bootname() {
+    case "$1" in
+        2) echo "system0" ;;
+        3) echo "system1" ;;
+        *) die "Unsupported boot partition: $1" ;;
+    esac
+}
+
+# Read the normal boot selection.
+get_primary() {
+    partition="$(get_boot_partition all)"
+    partition_to_bootname "$partition"
+}
+
+# Read the one-shot tryboot destination.
+get_tryboot_target() {
+    partition="$(get_boot_partition tryboot)"
+    partition_to_bootname "$partition"
+}
+
+# Determine the running slot from the kernel command line.
+get_current() {
+    [ -r "$CMDLINE_FILE" ] || die "Cannot read $CMDLINE_FILE"
+
+    set -f
+    for argument in $(cat "$CMDLINE_FILE"); do
+        case "$argument" in
+            rauc.slot=system0)
+                echo "system0"
+                return 0
+                ;;
+            rauc.slot=system1)
+                echo "system1"
+                return 0
+                ;;
+        esac
+    done
+
+    die "No valid rauc.slot found in kernel command line"
+}
+# Persistent boot state management - Phase 8.2
+
+STATE_DIR="${SECUREEDGE_STATE_DIR:-/data/secureedge-rauc/bootstate}"
+
+check_slot() {
+    case "$1" in
+        system0|system1) return 0 ;;
+        *) die "Invalid slot: $1" ;;
+    esac
+}
+
+check_state_storage() {
+    if [ "${SECUREEDGE_TEST_MODE:-0}" = "1" ]; then
+        [ -n "${SECUREEDGE_STATE_DIR:-}" ] ||
+            die "Missing test state directory"
+    else
+        [ "$STATE_DIR" = "/data/secureedge-rauc/bootstate" ] ||
+            die "Invalid production state directory"
+
+        awk '
+            $2 == "/data" && $3 == "ext4" { found = 1 }
+            END { exit !found }
+        ' /proc/mounts ||
+            die "DATA partition is not mounted"
+    fi
+
+    [ -d "$STATE_DIR" ] ||
+        die "State directory not found: $STATE_DIR"
+
+    [ ! -L "$STATE_DIR" ] ||
+        die "State directory cannot be a symlink"
+}
+
+get_state() {
+    [ "$#" -eq 1 ] || die "Usage: get-state SLOT"
+
+    check_slot "$1"
+    check_state_storage
+
+    state_file="$STATE_DIR/$1"
+
+    [ -f "$state_file" ] ||
+        die "State file missing: $state_file"
+
+    [ ! -L "$state_file" ] ||
+        die "Symlink state file forbidden"
+
+    state="$(cat "$state_file")" ||
+        die "Cannot read state"
+
+    case "$state" in
+        good|bad) printf '%s\n' "$state" ;;
+        *) die "Invalid stored state: $state" ;;
+    esac
+}
+
+set_state() {
+    [ "$#" -eq 2 ] ||
+        die "Usage: set-state SLOT good|bad"
+
+    check_slot "$1"
+
+    case "$2" in
+        good|bad) ;;
+        *) die "Invalid state: $2" ;;
+    esac
+
+    check_state_storage
+
+    target="$STATE_DIR/$1"
+
+    [ ! -L "$target" ] ||
+        die "Symlink target forbidden"
+
+    tmp="$(mktemp "$STATE_DIR/.state.XXXXXX")" ||
+        die "Cannot create temporary file"
+
+    trap 'rm -f "$tmp"' EXIT
+    trap 'exit 1' HUP INT TERM
+
+    printf '%s\n' "$2" > "$tmp" ||
+        die "Cannot write state"
+
+    chmod 0600 "$tmp" ||
+        die "Cannot set permissions"
+
+    sync
+
+    mv -f "$tmp" "$target" ||
+        die "Cannot update state"
+
+    sync
+
+    trap - EXIT HUP INT TERM
+}
+case "${1:-}" in
+    get-primary)
+        [ "$#" -eq 1 ] || die "Invalid arguments"
+        get_primary
+        ;;
+
+    get-current)
+        [ "$#" -eq 1 ] || die "Invalid arguments"
+        get_current
+        ;;
+
+    get-tryboot-target)
+        [ "$#" -eq 1 ] || die "Invalid arguments"
+        get_tryboot_target
+        ;;
+
+    get-state)
+        shift
+        get_state "$@"
+        ;;
+
+    set-state)
+        shift
+        set_state "$@"
+        ;;
+
+    set-primary)
+        die "set-primary not yet implemented"
+        ;;
+
+    *)
+        die "Unknown command: ${1:-empty}"
+        ;;
+esac

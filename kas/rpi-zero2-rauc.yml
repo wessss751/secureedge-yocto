@@ -13,3 +13,19 @@ repos:
 local_conf_header:
   secureedge_rauc: |
     DISTRO_FEATURES:append = " rauc"
+    IMAGE_INSTALL:append = " rauc"
+    IMAGE_FSTYPES:append = " ext4"
+  secureedge_wic_ab: |
+    WKS_FILE = "secureedge-rauc-ab.wks"
+
+    IMAGE_BOOT_FILES_label-BOOTCTL = "bootfiles/bootcode.bin;bootcode.bin bootfiles/start.elf;start.elf bootfiles/fixup.dat;fixup.dat secureedge-rauc/autoboot.txt;autoboot.txt"
+
+    IMAGE_BOOT_FILES_label-BOOT_A = "${IMAGE_BOOT_FILES} secureedge-rauc/cmdline-a.txt;cmdline.txt"
+
+    IMAGE_BOOT_FILES_label-BOOT_B = "${IMAGE_BOOT_FILES} secureedge-rauc/cmdline-b.txt;cmdline.txt"
+
+    WICVARS:append = " IMAGE_BOOT_FILES_label-BOOTCTL IMAGE_BOOT_FILES_label-BOOT_A IMAGE_BOOT_FILES_label-BOOT_B"
+
+    do_image_wic[depends] += "secureedge-rauc-bootfiles:do_deploy"
+  secureedge_persistent_data: |
+    IMAGE_INSTALL:append = " secureedge-data"

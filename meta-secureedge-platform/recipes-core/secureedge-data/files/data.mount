@@ -1,0 +1,11 @@
+[Unit]
+Description=SecureEdge persistent DATA partition
+
+[Mount]
+What=/dev/disk/by-label/DATA
+Where=/data
+Type=ext4
+Options=rw,noatime,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target

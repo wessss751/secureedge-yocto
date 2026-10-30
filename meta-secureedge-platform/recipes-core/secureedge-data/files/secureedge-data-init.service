@@ -1,0 +1,13 @@
+[Unit]
+Description=Initialize SecureEdge persistent DATA
+Requires=data.mount
+After=data.mount
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/secureedge-data-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

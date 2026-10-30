@@ -1,0 +1,47 @@
+#!/bin/sh
+# SecureEdge persistent DATA initialization
+
+set -eu
+umask 077
+
+DATA_DIR="/data"
+RAUC_DIR="$DATA_DIR/rauc"
+BOOTSTATE_DIR="$DATA_DIR/secureedge-rauc/bootstate"
+
+fail() {
+    echo "secureedge-data-init: $*" >&2
+    exit 1
+}
+
+# Never initialize directories on the rootfs.
+awk '
+    $2 == "/data" && $3 == "ext4" {
+        found = 1
+    }
+    END {
+        exit !found
+    }
+' /proc/mounts || fail "DATA is not mounted as ext4"
+
+[ ! -L "$DATA_DIR" ] ||
+    fail "/data must not be a symlink"
+
+# Prevent unexpected symlink redirection.
+for path in \
+    "$RAUC_DIR" \
+    "$DATA_DIR/secureedge-rauc" \
+    "$BOOTSTATE_DIR"
+do
+    [ ! -L "$path" ] ||
+        fail "Symlink forbidden: $path"
+done
+
+# Create persistent directories.
+mkdir -p "$RAUC_DIR"
+mkdir -p "$BOOTSTATE_DIR"
+
+chmod 0700 "$RAUC_DIR"
+chmod 0700 "$DATA_DIR/secureedge-rauc"
+chmod 0700 "$BOOTSTATE_DIR"
+
+echo "secureedge-data-init: persistent directories ready"
