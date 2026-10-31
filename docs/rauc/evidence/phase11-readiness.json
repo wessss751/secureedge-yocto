@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "generated_utc": "2026-10-31T19:17:00.499725+00:00",
+  "scope": "offline-readiness",
+  "hardware_status": "NO-GO",
+  "results": [
+    {
+      "check": "backup_exists",
+      "state": "PASS",
+      "detail": "/mnt/secureedge-storage/rauc-ab-tests/backup-before-real-ota/secureedge-current-pre-ota.img.gz"
+    },
+    {
+      "check": "backup_sha256",
+      "state": "PASS",
+      "detail": "SHA-256 matches"
+    },
+    {
+      "check": "backup_gzip",
+      "state": "PASS",
+      "detail": "Gzip stream readable"
+    },
+    {
+      "check": "rootfs_image",
+      "state": "PASS",
+      "detail": "201326592 bytes"
+    },
+    {
+      "check": "boot_image",
+      "state": "PASS",
+      "detail": "201326592 bytes"
+    },
+    {
+      "check": "rootfs_format",
+      "state": "PASS",
+      "detail": "ext4"
+    },
+    {
+      "check": "boot_format",
+      "state": "PASS",
+      "detail": "vfat"
+    },
+    {
+      "check": "boot_b_cmdline",
+      "state": "PASS",
+      "detail": "dwc_otg.lpm_enable=0 root=/dev/mmcblk0p6 rootfstype=ext4 rootwait net.ifnames=0 rauc.slot=system1"
+    },
+    {
+      "check": "boot_b_files",
+      "state": "PASS",
+      "detail": "Essential files found"
+    },
+    {
+      "check": "wic_layout",
+      "state": "PASS",
+      "detail": "BOOTCTL / A / B / extended / ROOTFS_A / ROOTFS_B / DATA"
+    },
+    {
+      "check": "backend_syntax",
+      "state": "PASS",
+      "detail": "Syntax valid"
+    },
+    {
+      "check": "trial_syntax",
+      "state": "PASS",
+      "detail": "Syntax valid"
+    },
+    {
+      "check": "health_syntax",
+      "state": "PASS",
+      "detail": "Syntax valid"
+    },
+    {
+      "check": "confirm_lab_source",
+      "state": "PASS",
+      "detail": "Laboratory source present"
+    },
+    {
+      "check": "recovery_lab_source",
+      "state": "PASS",
+      "detail": "Laboratory source present"
+    }
+  ],
+  "hardware_blockers": [
+    "RAUC set-primary hardware contract not demonstrated",
+    "Authenticated completed-install transaction not demonstrated",
+    "Power-loss-qualified FAT BOOTCTL update not demonstrated",
+    "Production trial reboot controller not demonstrated",
+    "Candidate device provisioning not verified",
+    "Real A-to-B OTA and normal B reboot not demonstrated",
+    "Real failed-B rollback not demonstrated"
+  ],
+  "no_device_writes": true
+}
