@@ -31,3 +31,5 @@ do_install:append() {
             >> "$conf"
     fi
 }
+
+# Install the trial preflight helper only in custom RAUC lab builds.

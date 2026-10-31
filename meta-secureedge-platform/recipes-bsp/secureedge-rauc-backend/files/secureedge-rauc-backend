@@ -152,7 +152,26 @@ set_state() {
 set_primary() {
     [ "$#" -eq 1 ] || fail "Usage: set-primary SLOT"
     check_slot "$1"
-    [ "${SECUREEDGE_TEST_MODE:-0}" = "1" ] || fail "set-primary disabled outside simulation"
+    # Hardware staging is disabled unless explicitly provisioned.
+    # This only records a candidate; it does not reboot or confirm.
+    if [ "${SECUREEDGE_TEST_MODE:-0}" != "1" ]; then
+        marker="/etc/secureedge/rauc-hardware-staging.enabled"
+
+        [ "$(id -u)" -eq 0 ] || fail "Hardware staging requires root"
+        [ -f "$marker" ] && [ ! -L "$marker" ] ||
+            fail "Hardware staging not enabled"
+
+        marker_owner="$(stat -c '%u:%g' "$marker")" ||
+            fail "Cannot inspect staging marker"
+        marker_mode="$(stat -c '%a' "$marker")" ||
+            fail "Cannot inspect staging marker"
+
+        [ "$marker_owner" = "0:0" ] ||
+            fail "Staging marker must be root-owned"
+        [ "$marker_mode" = "600" ] ||
+            fail "Staging marker must have mode 0600"
+    fi
+
     check_runtime_paths
     check_state_storage
 
@@ -167,6 +186,8 @@ set_primary() {
 
     pending_file="$STATE_DIR/pending-slot"
     [ ! -L "$pending_file" ] || fail "Pending state symlink forbidden"
+    [ ! -e "$pending_file" ] ||
+        fail "Another RAUC trial transaction is already pending"
     temp_file="$(mktemp "$STATE_DIR/.pending.XXXXXX")" || fail "Cannot create pending state"
     trap 'rm -f "$temp_file"' 0
     trap 'exit 1' 1 2 3 15

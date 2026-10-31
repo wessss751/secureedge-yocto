@@ -51,3 +51,6 @@ secureedge_prod_enable_timewait() {
 }
 
 ROOTFS_POSTPROCESS_COMMAND:append = " secureedge_prod_enable_timewait; "
+
+# Laboratory-only RAUC trial preflight helper.
+IMAGE_INSTALL:append = "${@' secureedge-rauc-trial' if d.getVar('SECUREEDGE_RAUC_CUSTOM_TEST') == '1' else ''}"

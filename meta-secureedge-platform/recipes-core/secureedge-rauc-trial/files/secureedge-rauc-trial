@@ -1,0 +1,80 @@
+#!/bin/sh
+set -eu
+
+BACKEND=/usr/sbin/secureedge-rauc-backend
+STATE_DIR=/data/secureedge-rauc/bootstate
+
+fail() {
+    printf 'SECUREEDGE TRIAL: BLOCKED: %s\n' "$*" >&2
+    exit 1
+}
+
+[ "$#" -eq 1 ] && [ "$1" = "--check" ] ||
+    fail "Only --check is supported"
+
+[ "$(id -u)" -eq 0 ] ||
+    fail "Root privileges required"
+
+# Never allow laboratory overrides in hardware checks.
+[ "${SECUREEDGE_TEST_MODE:-0}" != "1" ] ||
+    fail "Test mode forbidden"
+
+[ -z "${SECUREEDGE_BOOTCTL_DIR:-}" ] ||
+    fail "BOOTCTL override forbidden"
+
+[ -z "${SECUREEDGE_STATE_DIR:-}" ] ||
+    fail "State override forbidden"
+
+[ -z "${SECUREEDGE_CMDLINE_FILE:-}" ] ||
+    fail "Cmdline override forbidden"
+
+[ -x "$BACKEND" ] ||
+    fail "Backend unavailable"
+
+# DATA must be mounted as persistent ext4.
+awk '$2 == "/data" && $3 == "ext4" {ok=1}
+     END {exit !ok}' /proc/mounts ||
+    fail "DATA not mounted"
+
+[ -d "$STATE_DIR" ] && [ ! -L "$STATE_DIR" ] ||
+    fail "Invalid state directory"
+
+PENDING_FILE="$STATE_DIR/pending-slot"
+
+[ -f "$PENDING_FILE" ] && [ ! -L "$PENDING_FILE" ] ||
+    fail "Pending transaction missing"
+
+PRIMARY="$("$BACKEND" get-primary)" ||
+    fail "Cannot read primary"
+
+CURRENT="$("$BACKEND" get-current)" ||
+    fail "Cannot read current"
+
+TRIAL="$("$BACKEND" get-tryboot-target)" ||
+    fail "Cannot read trial target"
+
+PENDING="$(cat "$PENDING_FILE")" ||
+    fail "Cannot read pending transaction"
+
+case "$PRIMARY:$TRIAL" in
+    system0:system1|system1:system0) ;;
+    *) fail "Invalid A/B pairing" ;;
+esac
+
+[ "$CURRENT" = "$PRIMARY" ] ||
+    fail "Not running primary slot"
+
+[ "$PENDING" = "$TRIAL" ] ||
+    fail "Pending target mismatch"
+
+[ "$("$BACKEND" get-state "$PRIMARY")" = "good" ] ||
+    fail "Recovery slot not good"
+
+# This checks the current transaction state only.
+# It does not prove the OTA images were completely installed.
+printf 'PRIMARY=%s\n' "$PRIMARY"
+printf 'CURRENT=%s\n' "$CURRENT"
+printf 'TRIAL=%s\n' "$TRIAL"
+printf 'PENDING=%s\n' "$PENDING"
+printf 'TRIAL_PREFLIGHT=PASS\n'
+printf 'REBOOT_ENABLED=NO\n'
