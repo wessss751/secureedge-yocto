@@ -1,0 +1,14 @@
+[Unit]
+Description=SecureEdge critical services health monitor
+After=multi-user.target data.mount bootctl.mount
+Wants=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/secureedge-service-monitor
+User=root
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+TimeoutStartSec=30

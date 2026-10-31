@@ -1,0 +1,46 @@
+
+#!/bin/sh
+set -eu
+
+SYSTEMCTL="${SECUREEDGE_SYSTEMCTL:-/bin/systemctl}"
+UNITS_FILE="${SECUREEDGE_UNITS_FILE:-/etc/secureedge/critical-services.units}"
+
+fail() {
+    echo "HEALTH_FAILED: $*" >&2
+    exit 1
+}
+
+[ -r "$UNITS_FILE" ] || fail "Missing critical services list"
+[ -x "$SYSTEMCTL" ] || fail "systemctl unavailable"
+
+count=0
+
+while IFS= read -r unit || [ -n "$unit" ]; do
+    case "$unit" in
+        ''|'#'*) continue ;;
+    esac
+
+    case "$unit" in
+        *[!a-zA-Z0-9@_.-]*)
+            fail "Invalid unit name"
+            ;;
+    esac
+
+    case "$unit" in
+        *.service|*.mount) ;;
+        *) fail "Unsupported unit type" ;;
+    esac
+
+    count=$((count + 1))
+
+    if "$SYSTEMCTL" is-active --quiet "$unit"; then
+        echo "OK: $unit"
+    else
+        echo "FAILED: $unit" >&2
+        exit 1
+    fi
+done < "$UNITS_FILE"
+
+[ "$count" -gt 0 ] || fail "No critical services configured"
+
+echo "HEALTH_OK: $count critical units active"

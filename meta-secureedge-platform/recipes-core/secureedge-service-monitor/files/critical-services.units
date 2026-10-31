@@ -1,0 +1,6 @@
+# SecureEdge critical boot services
+data.mount
+bootctl.mount
+secureedge-data-init.service
+secureedge-network.service
+secureedge-agent.service
