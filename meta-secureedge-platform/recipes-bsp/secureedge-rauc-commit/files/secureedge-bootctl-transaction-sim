@@ -1,0 +1,239 @@
+
+#!/usr/bin/env python3
+"""SecureEdge BOOTCTL transaction simulator.
+
+LAB ONLY:
+- Operates on a dedicated temporary sandbox.
+- Does not access real BOOTCTL or DATA mounts.
+- POSIX filesystem behaviour is NOT equivalent to FAT power-loss safety.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+
+INITIAL = """[all]
+tryboot_a_b=1
+boot_partition=2
+
+[tryboot]
+boot_partition=3
+"""
+
+PROMOTED = """[all]
+tryboot_a_b=1
+boot_partition=3
+
+[tryboot]
+boot_partition=2
+"""
+
+MARKER = ".secureedge-transaction-lab"
+ALLOWED = {INITIAL, PROMOTED}
+
+
+def digest(data):
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+
+def durable_write(path, content):
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("x", encoding="utf-8") as stream:
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, path)
+    fd = os.open(str(path.parent), os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def paths(base):
+    base = Path(base).resolve()
+    if not (base / MARKER).is_file():
+        raise ValueError("Not a SecureEdge test sandbox")
+
+    boot = base / "BOOTCTL" / "autoboot.txt"
+    journal = base / "DATA" / "transaction.json"
+
+    if boot.is_symlink() or journal.is_symlink():
+        raise ValueError("Symlink prohibited")
+
+    return boot, journal
+
+
+def write_journal(path, record):
+    durable_write(path, json.dumps(record, indent=2) + "\n")
+
+
+def read_journal(path):
+    record = json.loads(path.read_text())
+    required = {"state", "old_sha256", "new_sha256"}
+
+    if not required.issubset(record):
+        raise ValueError("Invalid journal")
+
+    if record["old_sha256"] != digest(INITIAL):
+        raise ValueError("Unexpected original hash")
+
+    if record["new_sha256"] != digest(PROMOTED):
+        raise ValueError("Unexpected candidate hash")
+
+    return record
+
+
+def initialize(base):
+    base = Path(base).resolve()
+
+    if base.exists():
+        raise ValueError("Sandbox already exists")
+
+    # Restrict the laboratory to the OS temporary directory.
+    import tempfile
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    if temp_root not in base.parents:
+        raise ValueError("Sandbox must be beneath temporary directory")
+
+    (base / "BOOTCTL").mkdir(parents=True)
+    (base / "DATA").mkdir()
+    (base / MARKER).write_text("offline-simulation-only\n")
+
+    durable_write(base / "BOOTCTL/autoboot.txt", INITIAL)
+    print("LAB_INITIALIZED")
+
+
+def promote(base, fault):
+    boot, journal = paths(base)
+
+    if journal.exists():
+        raise ValueError("Existing transaction must be recovered")
+
+    if boot.read_text() != INITIAL:
+        raise ValueError("Unexpected initial BOOTCTL contents")
+
+    record = {
+        "state": "prepared",
+        "old_sha256": digest(INITIAL),
+        "new_sha256": digest(PROMOTED),
+    }
+
+    write_journal(journal, record)
+
+    if fault == "after-prepared":
+        raise RuntimeError("SIMULATED_POWER_LOSS_AFTER_PREPARED")
+
+    record["state"] = "writing"
+    write_journal(journal, record)
+
+    if fault == "before-replace":
+        raise RuntimeError("SIMULATED_POWER_LOSS_BEFORE_REPLACE")
+
+    durable_write(boot, PROMOTED)
+
+    if fault == "after-replace":
+        raise RuntimeError("SIMULATED_POWER_LOSS_AFTER_REPLACE")
+
+    if boot.read_text() != PROMOTED:
+        raise ValueError("Candidate verification failed")
+
+    record["state"] = "committed"
+    write_journal(journal, record)
+
+    print("SIMULATED_COMMIT_OK")
+
+
+def recover(base):
+    boot, journal = paths(base)
+
+    if not journal.is_file():
+        raise ValueError("No transaction journal")
+
+    record = read_journal(journal)
+    content = boot.read_text()
+
+    if record["state"] == "committed":
+        if content != PROMOTED:
+            record["state"] = "manual_recovery_required"
+            write_journal(journal, record)
+            raise ValueError("Committed content is inconsistent")
+
+        print("COMMITTED_STATE_VERIFIED")
+        return
+
+    if record["state"] == "recovered":
+        if content != INITIAL:
+            raise ValueError("Recovered content is inconsistent")
+        print("ALREADY_RECOVERED")
+        return
+
+    if record["state"] not in ("prepared", "writing"):
+        raise ValueError("Unknown journal state; manual recovery required")
+
+    if content not in ALLOWED:
+        record["state"] = "manual_recovery_required"
+        write_journal(journal, record)
+        raise ValueError("Corrupted BOOTCTL; manual recovery required")
+
+    # LAB POLICY: roll back uncommitted transactions to A.
+    durable_write(boot, INITIAL)
+
+    if boot.read_text() != INITIAL:
+        raise ValueError("Recovery verification failed")
+
+    record["state"] = "recovered"
+    write_journal(journal, record)
+
+    print("SIMULATED_RECOVERY_TO_A_OK")
+
+
+def status(base):
+    boot, journal = paths(base)
+    print("BOOTCTL_SHA256=" + digest(boot.read_text()))
+    print("JOURNAL=" + (
+        read_journal(journal)["state"]
+        if journal.exists()
+        else "none"
+    ))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "action",
+        choices=("init", "promote", "recover", "status"),
+    )
+    parser.add_argument("--sandbox", required=True)
+    parser.add_argument(
+        "--fault",
+        choices=(
+            "none",
+            "after-prepared",
+            "before-replace",
+            "after-replace",
+        ),
+        default="none",
+    )
+    args = parser.parse_args()
+
+    try:
+        if args.action == "init":
+            initialize(args.sandbox)
+        elif args.action == "promote":
+            promote(args.sandbox, args.fault)
+        elif args.action == "recover":
+            recover(args.sandbox)
+        else:
+            status(args.sandbox)
+    except (OSError, ValueError, RuntimeError, KeyError) as error:
+        print(f"TRANSACTION_SIM_ERROR: {error}")
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
