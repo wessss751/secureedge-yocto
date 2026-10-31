@@ -1,0 +1,8 @@
+header:
+  version: 14
+  includes:
+    - rpi-zero2-rauc.yml
+
+local_conf_header:
+  secureedge_rauc_custom_test: |
+    SECUREEDGE_RAUC_CUSTOM_TEST = "1"
