@@ -44,4 +44,20 @@ chmod 0700 "$RAUC_DIR"
 chmod 0700 "$DATA_DIR/secureedge-rauc"
 chmod 0700 "$BOOTSTATE_DIR"
 
+
+# Persistent device configuration for RAUC A/B.
+# Never create or overwrite device credentials here.
+for path in \
+    "$DATA_DIR/secureedge" \
+    "$DATA_DIR/secureedge/config" \
+    "$DATA_DIR/secureedge/identity"
+do
+    [ ! -L "$path" ] || fail "Symlink forbidden: $path"
+done
+
+mkdir -p "$DATA_DIR/secureedge/config"
+mkdir -p "$DATA_DIR/secureedge/identity"
+
+chmod 0700 "$DATA_DIR/secureedge/identity"
+
 echo "secureedge-data-init: persistent directories ready"
