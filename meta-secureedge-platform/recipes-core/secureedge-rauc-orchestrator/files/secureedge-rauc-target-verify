@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Verify installed RAUC A/B image bytes against trusted expected hashes.
+
+Read-only. Does not authorize tryboot or modify BOOTCTL.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import stat
+from pathlib import Path
+
+TARGETS = {
+    "rootfs": "/dev/mmcblk0p6",
+    "boot": "/dev/mmcblk0p3",
+}
+
+
+def fail(message):
+    raise SystemExit(f"TARGET_VERIFICATION=BLOCKED: {message}")
+
+
+def digest_prefix(device, size):
+    digest = hashlib.sha256()
+    remaining = size
+
+    with open(device, "rb", buffering=0) as stream:
+        while remaining:
+            data = stream.read(min(1024 * 1024, remaining))
+            if not data:
+                fail("Unexpected end of partition")
+            digest.update(data)
+            remaining -= len(data)
+
+    return digest.hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--manifest", required=True)
+    args = parser.parse_args()
+
+    if os.geteuid() != 0:
+        fail("Root required")
+
+    manifest = Path(args.manifest)
+
+    if manifest.is_symlink() or not manifest.is_file():
+        fail("Invalid manifest")
+
+    if manifest.stat().st_size > 16384:
+        fail("Manifest too large")
+
+    data = json.loads(manifest.read_text())
+
+    if set(data) != {"rootfs", "boot"}:
+        fail("Unexpected manifest structure")
+
+    for name, device in TARGETS.items():
+        item = data[name]
+
+        if set(item) != {"size", "sha256"}:
+            fail("Invalid image entry")
+
+        size = item["size"]
+        expected = item["sha256"]
+
+        if type(size) is not int or size <= 0:
+            fail("Invalid image size")
+
+        if not isinstance(expected, str) or len(expected) != 64:
+            fail("Invalid SHA-256")
+
+        if not stat.S_ISBLK(os.stat(device).st_mode):
+            fail("Not a block device")
+
+        actual = digest_prefix(device, size)
+
+        if actual.lower() != expected.lower():
+            fail(f"Checksum mismatch: {name}")
+
+        print(f"PASS: {name} matches expected image bytes")
+
+    print("TARGET_BYTES_VERIFIED=YES")
+    print("TRYBOOT_AUTHORIZED=NO")
+    print("BOOTCTL_MODIFIED=NO")
+
+
+if __name__ == "__main__":
+    main()

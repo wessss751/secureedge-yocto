@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""Fail-closed signed RAUC B image audit. Read-only. NEVER authorizes tryboot."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import struct
+import subprocess
+import sys
+
+RECORD = Path('/data/secureedge-rauc/last-install.json')
+PENDING = Path('/data/secureedge-rauc/bootstate/pending-slot')
+KEYRING = Path('/etc/rauc/ca.cert.pem')
+BOOTCTL = Path('/bootctl/autoboot.txt')
+DT = Path('/proc/device-tree/chosen/bootloader')
+EXPECTED = {'rootfs': Path('/dev/mmcblk0p6'), 'boot': Path('/dev/mmcblk0p3')}
+COMPATIBLE = 'secureedge-rpi-zero2w'
+
+
+def deny(message):
+    raise SystemExit('AUDIT=BLOCKED: ' + str(message))
+
+
+def regular(path, maximum=None):
+    try:
+        mode = path.lstat().st_mode
+        if not stat.S_ISREG(mode):
+            deny('Not a regular file: ' + str(path))
+        if maximum is not None and path.stat().st_size > maximum:
+            deny('Oversized file: ' + str(path))
+    except OSError as error:
+        deny('Cannot access ' + str(path) + ': ' + str(error))
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with path.open('rb') as f:
+        for b in iter(lambda: f.read(1024 * 1024), b''):
+            h.update(b)
+    return h.hexdigest()
+
+
+def data_ready():
+    mounts = Path('/proc/mounts').read_text().splitlines()
+    return any(len(a) >= 4 and a[1] == '/data' and a[2] == 'ext4'
+               and 'rw' in a[3].split(',') for a in (l.split() for l in mounts))
+
+
+def read_firmware(name):
+    raw = (DT / name).read_bytes()
+    if len(raw) != 4:
+        deny('Invalid firmware ' + name)
+    return struct.unpack('>I', raw)[0]
+
+
+def bootctl_primary_a():
+    lines = BOOTCTL.read_text(encoding='ascii').splitlines()
+    section = None
+    values = {}
+    for raw in lines:
+        line = raw.split('#', 1)[0].strip()
+        if not line:
+            continue
+        if line in ('[all]', '[tryboot]'):
+            if line in values:
+                deny('Duplicate BOOTCTL section')
+            section = line
+            values[section] = {}
+            continue
+        if section is None or line.count('=') != 1:
+            deny('Invalid BOOTCTL syntax')
+        k, v = [part.strip() for part in line.split('=', 1)]
+        if k in values[section]:
+            deny('Duplicate BOOTCTL directive')
+        values[section][k] = v
+    if values != {'[all]': {'tryboot_a_b': '1', 'boot_partition': '2'},
+                  '[tryboot]': {'boot_partition': '3'}}:
+        deny('A must remain primary and B trial')
+
+
+def device_size(fd):
+    # Linux BLKGETSIZE64
+    return struct.unpack('Q', fcntl.ioctl(fd, 0x80081272, b'\x00' * 8))[0]
+
+
+def assert_unmounted(device):
+    st = device.stat()
+    majmin = f'{os.major(st.st_rdev)}:{os.minor(st.st_rdev)}'
+    for line in Path('/proc/self/mountinfo').read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[2] == majmin:
+            deny('Target partition is mounted: ' + str(device))
+
+
+def partition_hash(device, size):
+    st = device.stat()
+    if not stat.S_ISBLK(st.st_mode):
+        deny('Not block device: ' + str(device))
+    assert_unmounted(device)
+    h = hashlib.sha256()
+    fd = os.open(device, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    try:
+        if size > device_size(fd):
+            deny('Image larger than partition: ' + str(device))
+        remaining = size
+        while remaining:
+            b = os.read(fd, min(1024 * 1024, remaining))
+            if not b:
+                deny('Short partition read: ' + str(device))
+            h.update(b)
+            remaining -= len(b)
+    finally:
+        os.close(fd)
+    return h.hexdigest()
+
+
+def signed_manifest(bundle):
+    cmd = ['/usr/bin/rauc', 'info', f'--keyring={KEYRING}',
+           '--output-format=json-2', str(bundle)]
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if p.returncode:
+        deny('Signature verification or RAUC metadata failed')
+    try:
+        data = json.loads(p.stdout)
+    except ValueError:
+        deny('Malformed JSON from RAUC')
+    if not isinstance(data, dict) or not isinstance(data.get('update'), dict):
+        deny('Invalid RAUC metadata shape')
+    if data['update'].get('compatible') != COMPATIBLE:
+        deny('Incompatible signed bundle')
+    images = data.get('images')
+    if not isinstance(images, list) or len(images) != 2:
+        deny('Expected exactly two RAUC images')
+    result = {}
+    for item in images:
+        if not isinstance(item, dict):
+            deny('Malformed RAUC image')
+        key = item.get('slot-class')
+        digest = item.get('checksum')
+        size = item.get('size')
+        if key not in EXPECTED or key in result:
+            deny('Wrong or duplicate image class')
+        if type(size) is not int or size <= 0:
+            deny('Invalid signed image size')
+        if not isinstance(digest, str) or not re.fullmatch('[0-9a-fA-F]{64}', digest):
+            deny('Invalid signed image hash')
+        if item.get('hooks') or item.get('adaptive'):
+            deny('Image hooks/adaptive methods require separate qualification')
+        result[key] = (size, digest.lower())
+    if set(result) != set(EXPECTED):
+        deny('Missing image')
+    return result
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--bundle', required=True)
+    args = p.parse_args()
+    if os.geteuid() != 0:
+        deny('Root required')
+    if not data_ready():
+        deny('DATA must be ext4 rw')
+    if PENDING.exists() or PENDING.is_symlink():
+        deny('Pending trial already exists')
+    regular(RECORD, 16384)
+    bundle = Path(args.bundle)
+    if not bundle.is_absolute():
+        deny('Absolute bundle path required')
+    regular(bundle)
+    if not BOOTCTL.is_file() or BOOTCTL.is_symlink():
+        deny('BOOTCTL not accessible')
+    regular(KEYRING)
+    try:
+        record = json.loads(RECORD.read_text())
+        if not isinstance(record, dict) or record.get('schema') != 2:
+            deny('Wrong transaction schema')
+        if (record.get('state') != 'installed_unverified' or
+                record.get('install_completed') is not True or
+                record.get('rauc_exit_code') != 0 or
+                record.get('target_verified') is not False or
+                record.get('tryboot_authorized') is not False or
+                record.get('bootctl_confirmed') is not False):
+            deny('Transaction cannot be audited')
+        rec_hash = record.get('bundle_sha256')
+        if not isinstance(rec_hash, str) or not re.fullmatch('[0-9a-f]{64}', rec_hash):
+            deny('Bad recorded bundle SHA-256')
+        if sha256(bundle) != rec_hash:
+            deny('Bundle does not match installation record')
+        tokens = Path('/proc/cmdline').read_text().split()
+        if tokens.count('root=/dev/mmcblk0p5') != 1 or tokens.count('rauc.slot=system0') != 1:
+            deny('Not booted from A')
+        if read_firmware('partition') != 2 or read_firmware('tryboot') != 0:
+            deny('Firmware not in normal A boot')
+        bootctl_primary_a()
+        image_data = signed_manifest(bundle)
+        if sha256(bundle) != rec_hash:
+            deny('Bundle changed during verification')
+        for name in ('rootfs', 'boot'):
+            size, expected = image_data[name]
+            if partition_hash(EXPECTED[name], size) != expected:
+                deny(name + ' partition checksum mismatch')
+        print('AUDIT=PASS')
+        print('SIGNED_BUNDLE=VERIFIED')
+        print('B_PARTITIONS=BYTES_MATCH_SIGNED_IMAGES')
+        print('TRANSACTION=INSTALLED_UNVERIFIED')
+        print('TRYBOOT_AUTHORIZED=NO')
+        print('BOOTCTL_MODIFIED=NO')
+        print('REBOOT_EXECUTED=NO')
+    except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+        deny(str(exc))
+
+
+if __name__ == '__main__':
+    main()
