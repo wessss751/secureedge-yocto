@@ -42,14 +42,49 @@ def sha256(path):
     return digest.hexdigest()
 
 
+INSTALL_LOG = STATE / "rauc-install.log"
+
+
 def run(args):
-    return subprocess.run(
-        args,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    fd = os.open(
+        INSTALL_LOG,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
     )
+
+    with os.fdopen(fd, "w", encoding="utf-8") as log:
+        log.write(f"STARTED_AT={int(time.time())}\n")
+        log.flush()
+        os.fsync(log.fileno())
+
+        directory_fd = os.open(
+            STATE, os.O_RDONLY | os.O_DIRECTORY
+        )
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+        try:
+            result = subprocess.run(
+                args,
+                check=False,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.write(f"\nRAUC_EXEC_ERROR={exc}\n")
+            log.flush()
+            os.fsync(log.fileno())
+            raise
+
+        log.write(
+            f"\nRAUC_EXIT_CODE={result.returncode}\n"
+        )
+        log.flush()
+        os.fsync(log.fileno())
+
+        return result
 
 
 def atomic_record(data):
@@ -160,6 +195,9 @@ def main():
     if RECORD.exists() or RECORD.is_symlink():
         die("Previous installation record requires review")
 
+    if INSTALL_LOG.exists() or INSTALL_LOG.is_symlink():
+        die("Previous installation log requires review")
+
     with LOCK.open("a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
@@ -186,7 +224,7 @@ def main():
 
         try:
             # RAUC verifies the signed bundle during installation.
-            result = run(["/usr/bin/rauc", "install", str(bundle)])
+            result = run(["/usr/bin/rauc", "-d", "install", str(bundle)])
             rc = result.returncode
         except (OSError, subprocess.SubprocessError):
             rc = -1
