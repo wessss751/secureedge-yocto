@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Read-only SecureEdge health gate for a RAUC-orchestrated trial."""
+
+import json
+import subprocess
+import sys
+
+BOOT_PROOF = "/usr/sbin/secureedge-rauc-boot-proof"
+
+
+def fail(message):
+    print(f"HEALTH=BLOCKED: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def command(*args):
+    try:
+        return subprocess.run(
+            args,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        fail(f"Command unavailable: {args[0]}")
+
+
+def main():
+    if len(sys.argv) != 1:
+        fail("Arguments forbidden")
+
+    if not (
+        __import__("os").getuid() == 0
+    ):
+        fail("Root required")
+
+    mounts = open("/proc/mounts", encoding="utf-8").read()
+    if not any(
+        line.split()[1:3] == ["/data", "ext4"]
+        for line in mounts.splitlines()
+    ):
+        fail("DATA ext4 mount missing")
+
+    result = command(BOOT_PROOF, "--live")
+    if result.returncode != 0:
+        fail("Boot evidence failed")
+
+    try:
+        proof = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        fail("Invalid boot evidence")
+
+    if proof.get("result") != "TRIAL_CANDIDATE":
+        fail("Not a verified trial boot")
+
+    if proof.get("slot") != "system1":
+        fail("Expected candidate system1")
+
+    if proof.get("rootfs") != "/dev/mmcblk0p6":
+        fail("Wrong candidate ROOTFS")
+
+    if proof.get("firmware_tryboot") != 1:
+        fail("Firmware tryboot missing")
+
+    service = command(
+        "systemctl", "is-active", "--quiet",
+        "secureedge-agent.service",
+    )
+
+    if service.returncode != 0:
+        fail("SecureEdge agent inactive")
+
+    watchdog = command(
+        "systemctl", "show",
+        "-p", "RuntimeWatchdogUSec", "--value"
+    )
+
+    if watchdog.returncode != 0:
+        fail("Watchdog state unavailable")
+
+    if watchdog.stdout.strip() not in ("10s", "10s 0"):
+        fail("Unexpected watchdog configuration")
+
+    print("HEALTH=PASS")
+    print("CANDIDATE=system1")
+    print("ROOTFS=/dev/mmcblk0p6")
+    print("FIRMWARE_TRYBOOT=1")
+    print("AGENT_ACTIVE=1")
+    print("WATCHDOG_CONFIGURED=1")
+    print("MQTT_MTLS_VERIFIED=NO")
+    print("BOOTCTL_CONFIRMATION=NO")
+    print("DEVICE_WRITES=NO")
+
+
+if __name__ == "__main__":
+    main()

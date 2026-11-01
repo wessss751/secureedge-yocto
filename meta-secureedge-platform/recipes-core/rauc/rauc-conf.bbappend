@@ -33,3 +33,29 @@ do_install:append() {
 }
 
 # Install the trial preflight helper only in custom RAUC lab builds.
+
+# SecureEdge external boot orchestration profile.
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+SRC_URI:append = " file://system-orchestrated.conf"
+
+SECUREEDGE_RAUC_ORCHESTRATED ?= "0"
+
+do_install:append() {
+    if [ "${SECUREEDGE_RAUC_ORCHESTRATED}" = "1" ]; then
+        if [ "${SECUREEDGE_RAUC_CUSTOM_TEST}" = "1" ]; then
+            bbfatal "RAUC custom test and orchestrated modes are exclusive"
+        fi
+
+        if [ -f "${D}${sysconfdir}/rauc/system.conf" ]; then
+            conf="${D}${sysconfdir}/rauc/system.conf"
+        elif [ -f "${D}${nonarch_libdir}/rauc/system.conf" ]; then
+            conf="${D}${nonarch_libdir}/rauc/system.conf"
+        else
+            bbfatal "Installed RAUC system.conf not found"
+        fi
+
+        install -m 0644 \
+            "${WORKDIR}/system-orchestrated.conf" \
+            "$conf"
+    fi
+}

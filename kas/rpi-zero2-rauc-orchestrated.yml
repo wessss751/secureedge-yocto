@@ -1,0 +1,8 @@
+header:
+  version: 14
+  includes:
+    - rpi-zero2-rauc.yml
+
+local_conf_header:
+  secureedge_rauc_orchestrated: |
+    SECUREEDGE_RAUC_ORCHESTRATED = "1"

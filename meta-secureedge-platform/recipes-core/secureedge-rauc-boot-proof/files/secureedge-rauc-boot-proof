@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Read-only SecureEdge Raspberry Pi A/B boot evidence verifier."""
+
+import argparse
+import json
+import re
+import struct
+from pathlib import Path
+
+SLOTS = {
+    "system0": {"boot": 2, "root": "/dev/mmcblk0p5"},
+    "system1": {"boot": 3, "root": "/dev/mmcblk0p6"},
+}
+
+
+def fail(reason):
+    print(json.dumps({
+        "result": "BLOCKED",
+        "reason": reason,
+        "writes": False,
+    }))
+    raise SystemExit(2)
+
+
+def read_be32(path):
+    raw = path.read_bytes()
+    if len(raw) != 4:
+        fail(f"Invalid firmware property: {path.name}")
+    return struct.unpack(">I", raw)[0]
+
+
+def read_bootctl(path):
+    try:
+        lines = path.read_text(encoding="ascii").splitlines()
+    except (OSError, UnicodeError):
+        fail("Cannot read BOOTCTL")
+
+    sections = {}
+    current = None
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+
+        if line in ("[all]", "[tryboot]"):
+            if line in sections:
+                fail("Duplicate BOOTCTL section")
+            sections[line] = {}
+            current = line
+            continue
+
+        if current is None or line.count("=") != 1:
+            fail("Invalid BOOTCTL syntax")
+
+        key, value = (s.strip() for s in line.split("=", 1))
+        if key in sections[current]:
+            fail("Duplicate BOOTCTL key")
+
+        sections[current][key] = value
+
+    if set(sections) != {"[all]", "[tryboot]"}:
+        fail("Invalid BOOTCTL sections")
+
+    normal = sections["[all]"]
+    trial = sections["[tryboot]"]
+
+    if set(normal) != {"boot_partition", "tryboot_a_b"}:
+        fail("Unexpected BOOTCTL normal keys")
+
+    if set(trial) != {"boot_partition"}:
+        fail("Unexpected BOOTCTL trial keys")
+
+    if normal["tryboot_a_b"] != "1":
+        fail("tryboot A/B disabled")
+
+    try:
+        primary = int(normal["boot_partition"])
+        alternate = int(trial["boot_partition"])
+    except ValueError:
+        fail("Non-numeric BOOTCTL partition")
+
+    if (primary, alternate) not in ((2, 3), (3, 2)):
+        fail("Invalid BOOTCTL A/B mapping")
+
+    return primary, alternate
+
+
+def cmdline_identity(path):
+    tokens = path.read_text().split()
+
+    slot_tokens = [t for t in tokens if t.startswith("rauc.slot=")]
+    root_tokens = [t for t in tokens if t.startswith("root=")]
+
+    if len(slot_tokens) != 1 or len(root_tokens) != 1:
+        fail("Missing or duplicate kernel identity")
+
+    slot = slot_tokens[0].split("=", 1)[1]
+    root = root_tokens[0].split("=", 1)[1]
+
+    if slot not in SLOTS:
+        fail("Invalid RAUC slot")
+
+    if root != SLOTS[slot]["root"]:
+        fail("ROOTFS does not match RAUC slot")
+
+    return slot, root
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--live", action="store_true")
+    group.add_argument("--fixture", type=Path)
+    args = parser.parse_args()
+
+    if args.live:
+        bootctl = Path("/bootctl/autoboot.txt")
+        cmdline = Path("/proc/cmdline")
+        firmware = Path("/proc/device-tree/chosen/bootloader")
+        pending = Path("/data/secureedge-rauc/bootstate/pending-slot")
+    else:
+        base = args.fixture.absolute()
+        resolved = base.resolve()
+
+        if (
+            base.is_symlink()
+            or not resolved.is_relative_to(Path("/tmp"))
+            or not (base / ".secureedge-offline-lab").is_file()
+        ):
+            fail("Invalid offline fixture")
+
+        bootctl = base / "autoboot.txt"
+        cmdline = base / "cmdline"
+        firmware = base / "firmware"
+        pending = base / "pending-slot"
+
+    try:
+        primary, alternate = read_bootctl(bootctl)
+        slot, root = cmdline_identity(cmdline)
+
+        boot_partition = read_be32(firmware / "partition")
+        tryboot = read_be32(firmware / "tryboot")
+
+        if tryboot not in (0, 1):
+            fail("Invalid firmware tryboot value")
+
+        if boot_partition != SLOTS[slot]["boot"]:
+            fail("Firmware BOOT does not match Linux slot")
+
+        candidate = None
+        if pending.exists():
+            candidate = pending.read_text().strip()
+            if candidate not in SLOTS:
+                fail("Invalid pending slot")
+
+        if tryboot == 1:
+            if boot_partition != alternate:
+                fail("Tryboot did not select alternate")
+
+            if candidate != slot:
+                fail("Trial does not match pending candidate")
+
+            result = "TRIAL_CANDIDATE"
+
+        else:
+            if boot_partition != primary:
+                fail("Normal boot does not match primary")
+
+            if candidate == slot:
+                fail("Pending candidate unexpectedly booted normally")
+
+            result = "NORMAL_PRIMARY"
+
+        print(json.dumps({
+            "result": result,
+            "slot": slot,
+            "rootfs": root,
+            "boot_partition": boot_partition,
+            "primary_partition": primary,
+            "trial_partition": alternate,
+            "firmware_tryboot": tryboot,
+            "pending_slot": candidate,
+            "writes": False,
+        }, indent=2))
+
+    except (OSError, ValueError, UnicodeError) as exc:
+        fail(f"Boot evidence unavailable: {exc}")
+
+
+if __name__ == "__main__":
+    main()
