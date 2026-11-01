@@ -58,3 +58,12 @@ do_install:append() {
 }
 
 FILES:${PN}:append = " ${systemd_system_unitdir}/secureedge-rauc-install.service"
+
+# Fail-closed A->B activation, hardware disabled until privileged lab approval.
+SRC_URI:append = " file://secureedge-rauc-activation"
+do_install:append() {
+    install -m 0755 \
+        "${WORKDIR}/secureedge-rauc-activation" \
+        "${D}${sbindir}/secureedge-rauc-activation"
+}
+FILES:${PN}:append = " ${sbindir}/secureedge-rauc-activation"

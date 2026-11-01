@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""SecureEdge A->B engineering activation tool.
+
+Fail-closed. No automatic installation, boot switch or confirmation. Hardware
+mutations require explicit root-owned lab authorization and a recovery medium.
+"""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import struct
+import subprocess
+import sys
+import time
+
+BASE = Path('/data/secureedge-rauc')
+RECORD = BASE / 'last-install.json'
+LOCK = BASE / 'activation.lock'
+PENDING = BASE / 'bootstate/pending-slot'
+BOOTCTL = Path('/bootctl/autoboot.txt')
+LAB_MARKER = Path('/etc/secureedge/rauc-hardware-lab.enabled')
+AUDITOR = '/usr/sbin/secureedge-rauc-signed-target-verify'
+BOOT_PROOF = '/usr/sbin/secureedge-rauc-boot-proof'
+HEALTH = '/usr/sbin/secureedge-rauc-orchestrated-health'
+DEV_TREE = Path('/proc/device-tree/chosen/bootloader')
+A_CONFIG = '[all]\ntryboot_a_b=1\nboot_partition=2\n\n[tryboot]\nboot_partition=3\n'
+B_CONFIG = '[all]\ntryboot_a_b=1\nboot_partition=3\n\n[tryboot]\nboot_partition=2\n'
+
+
+def deny(why):
+    raise RuntimeError('BLOCKED: ' + str(why))
+
+
+def root_owned_file(p, mode=0o600):
+    try:
+        st = p.lstat()
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or stat.S_IMODE(st.st_mode) != mode:
+            deny('Unsafe privileged file: ' + str(p))
+    except OSError as e:
+        deny('Missing privileged file: ' + str(p) + ' (' + str(e) + ')')
+
+
+def check_environment():
+    if os.geteuid() != 0:
+        deny('Must run as root')
+    mounts = [line.split() for line in Path('/proc/mounts').read_text().splitlines()]
+    if not any(len(x) >= 4 and x[1] == '/data' and x[2] == 'ext4' and 'rw' in x[3].split(',') for x in mounts):
+        deny('DATA must be mounted ext4 rw')
+    if not BASE.is_dir() or BASE.is_symlink():
+        deny('Transaction dir missing or a symlink')
+    st = BASE.stat()
+    if st.st_uid != 0 or stat.S_IMODE(st.st_mode) != 0o700:
+        deny('Transaction directory must be root:root 0700')
+    if not PENDING.parent.is_dir() or PENDING.parent.is_symlink():
+        deny('bootstate directory missing')
+
+
+def dts(name):
+    raw = (DEV_TREE / name).read_bytes()
+    if len(raw) != 4:
+        deny('Malformed firmware property ' + name)
+    return struct.unpack('>I', raw)[0]
+
+
+def cmdline_is(slot):
+    tokens = Path('/proc/cmdline').read_text().split()
+    root = '/dev/mmcblk0p5' if slot == 'system0' else '/dev/mmcblk0p6'
+    return tokens.count('root=' + root) == 1 and tokens.count('rauc.slot=' + slot) == 1
+
+
+def parse_bootctl(s):
+    sections, cur = {}, None
+    for raw in s.splitlines():
+        line = raw.split('#', 1)[0].strip()
+        if not line:
+            continue
+        if line in ('[all]', '[tryboot]'):
+            if line in sections:
+                deny('Duplicate BOOTCTL section')
+            cur = line
+            sections[cur] = {}
+            continue
+        if cur is None or line.count('=') != 1:
+            deny('Malformed BOOTCTL')
+        k, v = [x.strip() for x in line.split('=', 1)]
+        if k in sections[cur]:
+            deny('Duplicate BOOTCTL key')
+        sections[cur][k] = v
+    if set(sections) != {'[all]', '[tryboot]'} or sections['[all]'].get('tryboot_a_b') != '1':
+        deny('Invalid BOOTCTL sections')
+    if set(sections['[all]']) != {'tryboot_a_b', 'boot_partition'} or set(sections['[tryboot]']) != {'boot_partition'}:
+        deny('Unexpected BOOTCTL keys')
+    try:
+        normal = int(sections['[all]']['boot_partition'])
+        trial = int(sections['[tryboot]']['boot_partition'])
+    except ValueError:
+        deny('Invalid partition numbers')
+    if (normal, trial) not in ((2, 3), (3, 2)):
+        deny('Not an A/B BOOTCTL configuration')
+    return normal, trial
+
+
+def bootctl_is_real():
+    mounts = [line.split() for line in Path('/proc/mounts').read_text().splitlines()]
+    if not any(len(x) >= 4 and x[1] == '/bootctl' and
+               x[0] == '/dev/mmcblk0p1' and x[2] in ('vfat', 'msdos')
+               for x in mounts):
+        deny('BOOTCTL must be mounted from /dev/mmcblk0p1 as FAT')
+    if BOOTCTL.is_symlink() or not BOOTCTL.is_file():
+        deny('BOOTCTL autoboot.txt missing or symlink')
+
+
+def normal_a():
+    bootctl_is_real()
+    if not cmdline_is('system0') or dts('partition') != 2 or dts('tryboot') != 0:
+        deny('Not running normal A')
+    if parse_bootctl(BOOTCTL.read_text()) != (2, 3):
+        deny('BOOTCTL primary A expected')
+
+
+def trial_b():
+    bootctl_is_real()
+    if not cmdline_is('system1') or dts('partition') != 3 or dts('tryboot') != 1:
+        deny('Not running a genuine trial on B')
+    if parse_bootctl(BOOTCTL.read_text()) != (2, 3):
+        deny('A must remain primary during trial')
+
+
+def read_record():
+    root_owned_file(RECORD)
+    if RECORD.stat().st_size > 16384:
+        deny('Oversized journal')
+    try:
+        obj = json.loads(RECORD.read_text())
+    except (ValueError, UnicodeError):
+        deny('Invalid journal')
+    if not isinstance(obj, dict) or obj.get('schema') != 2:
+        deny('Unsupported journal schema')
+    d = obj.get('bundle_sha256')
+    if not isinstance(d, str) or len(d) != 64 or any(c not in '0123456789abcdef' for c in d):
+        deny('Invalid recorded bundle checksum')
+    return obj
+
+
+def fsync_dir(d):
+    fd = os.open(d, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def atomic_record(record):
+    tmp = BASE / 'last-install.json.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(record, f, sort_keys=True)
+            f.write('\n')
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, RECORD)
+        fsync_dir(BASE)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def add_pending():
+    fd = os.open(PENDING, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        f.write('system1\n')
+        f.flush()
+        os.fsync(f.fileno())
+    fsync_dir(PENDING.parent)
+
+
+def pending_ok():
+    root_owned_file(PENDING)
+    if PENDING.read_text() != 'system1\n':
+        deny('Pending marker mismatch')
+
+
+def cmd(command):
+    result = subprocess.run(command, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, timeout=600, check=False)
+    if result.returncode:
+        deny('Subprocess failed: ' + command[0] + ' (exit ' + str(result.returncode) + ')')
+    return result.stdout
+
+
+def lab_guard():
+    root_owned_file(LAB_MARKER)
+    # Deliberately no auto-creation of authorization marker.
+
+
+def check_bundle(bundle):
+    if bundle != Path('/data/secureedge-rauc/inbox/candidate.raucb'):
+        deny('Only fixed root-provisioned candidate bundle allowed')
+    root_owned_file(bundle)
+
+
+def arm(bundle):
+    lab_guard()
+    normal_a()
+    check_bundle(bundle)
+    record = read_record()
+    if record.get('state') != 'installed_unverified' or record.get('install_completed') is not True:
+        deny('RAUC transaction not installed_unverified')
+    if PENDING.exists() or PENDING.is_symlink():
+        deny('Pending trial already exists')
+    output = cmd([AUDITOR, '--bundle', str(bundle)])
+    if 'AUDIT=PASS' not in output.splitlines():
+        deny('Signed target audit did not pass')
+    record.update(state='trial_arming', target_verified=True, tryboot_authorized=False,
+                  trial_armed_at=int(time.time()))
+    atomic_record(record)
+    add_pending()
+    record.update(state='trial_armed', tryboot_authorized=True)
+    atomic_record(record)
+    print('TRIAL_ARMED=YES\nREBOOT_EXECUTED=NO\nBOOTCTL_MODIFIED=NO')
+
+
+def trial():
+    lab_guard()
+    normal_a()
+    pending_ok()
+    record = read_record()
+    if (record.get('state') != 'trial_armed' or record.get('target_verified') is not True
+            or record.get('tryboot_authorized') is not True):
+        deny('Trial not armed')
+    record['state'] = 'trial_dispatched'
+    record['tryboot_dispatched_at'] = int(time.time())
+    atomic_record(record)
+    # Official Raspberry Pi one-shot syntax: ONE argument, '0 tryboot'.
+    # If the OS does not reboot, operator recovery is required; no retries.
+    cmd(['/sbin/reboot', '0 tryboot'])
+    print('REBOOT_REQUESTED=YES')
+
+
+def confirm_check():
+    lab_guard()
+    trial_b()
+    pending_ok()
+    record = read_record()
+    if record.get('state') != 'trial_dispatched':
+        deny('No dispatched trial to confirm')
+    proof = json.loads(cmd([BOOT_PROOF, '--live']))
+    if (proof.get('result') != 'TRIAL_CANDIDATE' or proof.get('slot') != 'system1'
+            or proof.get('firmware_tryboot') != 1 or proof.get('rootfs') != '/dev/mmcblk0p6'):
+        deny('Incomplete B firmware proof')
+    health = cmd([HEALTH])
+    if 'HEALTH=PASS' not in health.splitlines():
+        deny('Health gate failed')
+    if 'MQTT_MTLS_VERIFIED=YES' not in health.splitlines():
+        print('CONFIRMATION=BLOCKED\nREASON=MQTT_MTLS_DELIVERY_NOT_VERIFIED')
+        return 3
+    # Deliberately no BOOTCTL write: FAT power-loss recovery is not qualified.
+    print('CONFIRMATION=BLOCKED\nREASON=FAT_BOOTCTL_RECOVERY_NOT_QUALIFIED')
+    return 3
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    x = p.add_mutually_exclusive_group(required=True)
+    x.add_argument('--arm', action='store_true', help='Explicitly arm trial; never reboots')
+    x.add_argument('--trial', action='store_true', help='Explicitly request one-shot tryboot')
+    x.add_argument('--confirm-check', action='store_true', help='Read-only confirmation readiness')
+    p.add_argument('--bundle', default='/data/secureedge-rauc/inbox/candidate.raucb')
+    a = p.parse_args()
+    try:
+        check_environment()
+        lockfd = os.open(LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if a.arm:
+                arm(Path(a.bundle))
+            elif a.trial:
+                trial()
+            else:
+                return confirm_check()
+        finally:
+            os.close(lockfd)
+        return 0
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main())
