@@ -67,3 +67,12 @@ do_install:append() {
         "${D}${sbindir}/secureedge-rauc-activation"
 }
 FILES:${PN}:append = " ${sbindir}/secureedge-rauc-activation"
+
+# LAB-only BOOTCTL confirmation tool; deliberately no auto-enabled service.
+SRC_URI:append = " file://secureedge-rauc-confirm-lab"
+do_install:append() {
+    install -m 0755 \
+        "${WORKDIR}/secureedge-rauc-confirm-lab" \
+        "${D}${sbindir}/secureedge-rauc-confirm-lab"
+}
+FILES:${PN}:append = " ${sbindir}/secureedge-rauc-confirm-lab"

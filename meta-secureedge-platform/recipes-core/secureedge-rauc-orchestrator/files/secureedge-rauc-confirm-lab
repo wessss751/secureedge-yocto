@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+"""Lab-only SecureEdge A->B BOOTCTL confirmer.
+
+A real FAT write is possible ONLY under --commit with explicit privileged markers,
+verified B tryboot identity, durable transaction, health checks, and a separate
+operator acknowledgement of broker telemetry. Not power-cut atomic on FAT.
+NEVER run --commit on the only stable SD; use a qualified lab/recovery card.
+"""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import struct
+import subprocess
+import sys
+import time
+
+BASE = Path('/data/secureedge-rauc')
+RECORD = BASE / 'last-install.json'
+PENDING = BASE / 'bootstate/pending-slot'
+BOOTCTL = Path('/bootctl/autoboot.txt')
+LOCK = BASE / 'activation.lock'  # same lock as one-shot activation
+APPROVAL = Path('/etc/secureedge/rauc-confirm-lab.enabled')
+RECOVERY_APPROVAL = Path('/etc/secureedge/rauc-recovery-qualified.enabled')
+TELEMETRY = BASE / 'telemetry-lab-receipt.json'
+JOURNAL = BASE / 'bootctl-confirm.json'
+BOOT_PROOF = '/usr/sbin/secureedge-rauc-boot-proof'
+HEALTH = '/usr/sbin/secureedge-rauc-orchestrated-health'
+DEVICE_TREE = Path('/proc/device-tree/chosen/bootloader')
+A_CONFIG = '[all]\ntryboot_a_b=1\nboot_partition=2\n\n[tryboot]\nboot_partition=3\n'
+B_CONFIG = '[all]\ntryboot_a_b=1\nboot_partition=3\n\n[tryboot]\nboot_partition=2\n'
+
+
+def blocked(reason):
+    raise RuntimeError('BLOCKED: ' + reason)
+
+
+def regular_root(path, mode=0o600):
+    st = path.lstat()
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or stat.S_IMODE(st.st_mode) != mode:
+        blocked('Unsafe root-owned file: ' + str(path))
+    return st
+
+
+def mounted(path, fs, rw=False, device=None):
+    for ln in Path('/proc/mounts').read_text().splitlines():
+        p = ln.split()
+        if len(p) >= 4 and p[1] == path and p[2] == fs:
+            if device and p[0] != device:
+                continue
+            if rw and 'rw' not in p[3].split(','):
+                continue
+            return True
+    return False
+
+
+def firmware(field):
+    raw = (DEVICE_TREE / field).read_bytes()
+    if len(raw) != 4:
+        blocked('Malformed firmware evidence')
+    return struct.unpack('>I', raw)[0]
+
+
+def check_bootctl(content):
+    # Explicit canonical shape rather than forgiving unanticipated directives.
+    c = content.replace('\r\n', '\n').strip() + '\n'
+    if c != A_CONFIG:
+        blocked('Primary A BOOTCTL configuration is not canonical')
+    return True
+
+
+def cmd(args):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=40, check=False)
+    if result.returncode != 0:
+        blocked('Command failed: ' + args[0])
+    return result.stdout
+
+
+def fsync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def atomic_state(path, payload):
+    temp = path.with_name(path.name + '.new')
+    if temp.exists() or temp.is_symlink():
+        blocked('Previous interrupted state-write requires inspection')
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, 'w') as s:
+            json.dump(payload, s, sort_keys=True)
+            s.write('\n')
+            s.flush()
+            os.fsync(s.fileno())
+        os.replace(temp, path)
+        fsync_directory(path.parent)
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
+def kernel_tokens():
+    return Path('/proc/cmdline').read_text().split()
+
+
+def readiness(require_mqtt=True):
+    if os.geteuid() != 0:
+        blocked('Root required')
+    if not mounted('/data', 'ext4', rw=True):
+        blocked('DATA must be ext4 rw')
+    if not mounted('/bootctl', 'vfat', device='/dev/mmcblk0p1'):
+        blocked('BOOTCTL is not from expected partition')
+    if not BASE.is_dir() or BASE.is_symlink() or BASE.stat().st_uid != 0:
+        blocked('Invalid transaction directory')
+    if BOOTCTL.is_symlink() or not BOOTCTL.is_file():
+        blocked('Invalid autoboot.txt')
+    check_bootctl(BOOTCTL.read_text(encoding='ascii'))
+    kernel = kernel_tokens()
+    if (kernel.count('root=/dev/mmcblk0p6') != 1 or
+        kernel.count('rauc.slot=system1') != 1 or
+        firmware('partition') != 3 or firmware('tryboot') != 1):
+        blocked('Not a genuine B tryboot')
+    regular_root(RECORD)
+    if RECORD.stat().st_size > 16384:
+        blocked('Oversized transaction')
+    record = json.loads(RECORD.read_text())
+    if (record.get('schema') != 2 or record.get('state') != 'trial_dispatched' or
+        record.get('target_verified') is not True or
+        record.get('tryboot_authorized') is not True or
+        record.get('bootctl_confirmed') is not False):
+        blocked('Transaction not ready for B confirmation')
+    regular_root(PENDING)
+    if PENDING.read_text() != 'system1\n':
+        blocked('Unexpected pending slot')
+    proof = json.loads(cmd([BOOT_PROOF, '--live']))
+    if (proof.get('result') != 'TRIAL_CANDIDATE' or
+        proof.get('slot') != 'system1' or proof.get('rootfs') != '/dev/mmcblk0p6' or
+        proof.get('boot_partition') != 3 or proof.get('firmware_tryboot') != 1):
+        blocked('Boot proof not verified')
+    health = cmd([HEALTH])
+    if 'HEALTH=PASS' not in health.splitlines():
+        blocked('Health gate not passed')
+    if require_mqtt:
+        # This receipt is a human LAB attestation, not cryptographic broker evidence.
+        regular_root(TELEMETRY)
+        if TELEMETRY.stat().st_size > 4096:
+            blocked('Oversized lab receipt')
+        receipt = json.loads(TELEMETRY.read_text())
+        if (receipt.get('bundle_sha256') != record.get('bundle_sha256') or
+            receipt.get('candidate') != 'system1' or
+            receipt.get('broker_observed_agent_telemetry') is not True or
+            receipt.get('operator_reviewed') is not True):
+            blocked('Broker-side telemetry not attested for this candidate')
+    return record
+
+
+def confirm_commit(record):
+    regular_root(APPROVAL)
+    regular_root(RECOVERY_APPROVAL)
+    if JOURNAL.exists() or JOURNAL.is_symlink():
+        blocked('Commit already attempted; manual reconciliation required')
+    if not mounted('/bootctl', 'vfat', rw=True, device='/dev/mmcblk0p1'):
+        blocked('BOOTCTL must be mounted FAT rw')
+    old = BOOTCTL.read_bytes()
+    check_bootctl(old.decode('ascii'))
+    # State on DATA before touching FAT; does not make FAT writing atomic.
+    payload = {'schema': 1, 'state': 'updating_fat',
+               'old_sha256': hashlib.sha256(old).hexdigest(),
+               'new_sha256': hashlib.sha256(B_CONFIG.encode('ascii')).hexdigest(),
+               'bundle_sha256': record['bundle_sha256'],
+               'timestamp': int(time.time()), 'fat_powercut_safe': False}
+    atomic_state(JOURNAL, payload)
+    tmp = BOOTCTL.with_name('autoboot.secureedge-new')
+    if tmp.exists() or tmp.is_symlink():
+        blocked('Stale BOOTCTL temporary file')
+    # FAT rename improves normal operation but is NOT power-cut atomic.
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as f:
+        f.write(B_CONFIG.encode('ascii'))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, BOOTCTL)
+    fsync_directory(BOOTCTL.parent)
+    if BOOTCTL.read_text(encoding='ascii') != B_CONFIG:
+        blocked('BOOTCTL reread failed; manual recovery required')
+    payload['state'] = 'fat_written_verified'
+    atomic_state(JOURNAL, payload)
+    # Do not remove pending marker in this phase: it is evidence until
+    # a separate normal-B boot reconciliation after reboot.
+    print('LAB_BOOTCTL_COMMIT_WRITTEN=YES')
+    print('POWER_CUT_ATOMICITY_PROVEN=NO')
+    print('NORMAL_REBOOT_REQUIRED=YES')
+
+
+
+def finalize_normal_b():
+    """After a normal B reboot, reconcile DATA and retire pending marker.
+
+    Uses an intermediate state so a power cut during DATA cleanup can be
+    retried. Never edits FAT. Requires operator-approved LAB markers.
+    """
+    regular_root(APPROVAL)
+    regular_root(RECOVERY_APPROVAL)
+    if os.geteuid() != 0 or not mounted('/data', 'ext4', rw=True):
+        blocked('Root and persistent DATA required')
+    if not mounted('/bootctl', 'vfat', device='/dev/mmcblk0p1'):
+        blocked('Expected BOOTCTL not mounted')
+    if BOOTCTL.is_symlink() or BOOTCTL.read_text(encoding='ascii').replace('\r\n','\n').strip() + '\n' != B_CONFIG:
+        blocked('B is not BOOTCTL primary')
+    kernel = kernel_tokens()
+    if (kernel.count('root=/dev/mmcblk0p6') != 1 or
+        kernel.count('rauc.slot=system1') != 1 or
+        firmware('partition') != 3 or firmware('tryboot') != 0):
+        blocked('Not a genuine normal B reboot')
+    regular_root(JOURNAL)
+    event = json.loads(JOURNAL.read_text())
+    if event.get('schema') != 1 or event.get('state') not in ('fat_written_verified', 'normal_b_verified'):
+        blocked('FAT update journal not verified')
+    regular_root(RECORD)
+    record = json.loads(RECORD.read_text())
+    if record.get('schema') != 2 or record.get('bundle_sha256') != event.get('bundle_sha256'):
+        blocked('Transaction and BOOTCTL journal mismatch')
+    if record.get('state') == 'confirmed' and record.get('bootctl_confirmed') is True:
+        if PENDING.exists() or PENDING.is_symlink():
+            blocked('Confirmed state still has pending marker')
+        print('NORMAL_B_FINALIZED=YES')
+        return
+    if record.get('state') not in ('trial_dispatched', 'confirm_finalizing'):
+        blocked('Unexpected confirmation state')
+    if record.get('target_verified') is not True or record.get('bootctl_confirmed') is not False:
+        blocked('Unverified candidate or conflicting confirmation')
+    if cmd(['systemctl', 'is-active', 'secureedge-agent.service']).strip() != 'active':
+        blocked('Agent not active on normal B')
+    # Lab telemetry was operator-verified before FAT was updated; this is not
+    # a remotely authenticated receipt or production telemetry monitor.
+    regular_root(TELEMETRY)
+    receipt = json.loads(TELEMETRY.read_text())
+    if (receipt.get('bundle_sha256') != record['bundle_sha256'] or
+            receipt.get('broker_observed_agent_telemetry') is not True or
+            receipt.get('operator_reviewed') is not True):
+        blocked('Telemetry review missing')
+    if record['state'] != 'confirm_finalizing':
+        if not PENDING.is_file() or PENDING.is_symlink() or PENDING.read_text() != 'system1\n':
+            blocked('Expected pending marker missing')
+        record['state'] = 'confirm_finalizing'
+        atomic_state(RECORD, record)
+    if PENDING.exists():
+        regular_root(PENDING)
+        PENDING.unlink()
+        fsync_directory(PENDING.parent)
+    record['state'] = 'confirmed'
+    record['bootctl_confirmed'] = True
+    record['tryboot_authorized'] = False
+    atomic_state(RECORD, record)
+    event['state'] = 'normal_b_verified'
+    atomic_state(JOURNAL, event)
+    print('NORMAL_B_FINALIZED=YES')
+    print('PENDING_SLOT_REMOVED=YES')
+    print('FAT_POWER_CUT_ATOMICITY_PROVEN=NO')
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    action = ap.add_mutually_exclusive_group(required=True)
+    action.add_argument('--check', action='store_true')
+    action.add_argument('--commit', action='store_true')
+    action.add_argument('--finalize', action='store_true')
+    args = ap.parse_args()
+    try:
+        # --check is strictly read-only, including the lock file.
+        if args.check:
+            fd = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW)
+        else:
+            fd = os.open(LOCK, os.O_RDWR | os.O_NOFOLLOW)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if args.finalize:
+                finalize_normal_b()
+                return 0
+            record = readiness(require_mqtt=args.commit)
+            if args.check:
+                print('TRIAL_B_HEALTH=PASS')
+                print('MQTT_TELEMETRY_REVIEW=REQUIRED')
+                print('BOOTCTL_MODIFIED=NO')
+                print('CONFIRMATION_ENABLED=NO')
+            else:
+                confirm_commit(record)
+        finally:
+            os.close(fd)
+    except (OSError, RuntimeError, UnicodeError, ValueError, subprocess.TimeoutExpired) as exc:
+        print('CONFIRMATION_BLOCKED: ' + str(exc), file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
