@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""SecureEdge RAUC transaction inspection.
+
+Read-only. Never authorizes a boot and never changes BOOTCTL.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+STATE = Path("/data/secureedge-rauc")
+RECORD = STATE / "last-install.json"
+
+STATES = {
+    "installing",
+    "installed_unverified",
+    "failed",
+    "target_verified",
+}
+
+
+def fail(message):
+    print(f"TRANSACTION=BLOCKED: {message}", file=sys.stderr)
+    return 1
+
+
+def main():
+    if len(sys.argv) != 1:
+        return fail("Arguments forbidden")
+
+    if os.geteuid() != 0:
+        return fail("Root required")
+
+    if STATE.is_symlink() or not STATE.is_dir():
+        return fail("Invalid state directory")
+
+    if RECORD.is_symlink() or not RECORD.is_file():
+        return fail("Transaction record missing")
+
+    if RECORD.stat().st_size > 16384:
+        return fail("Transaction record too large")
+
+    try:
+        record = json.loads(RECORD.read_text())
+    except (OSError, UnicodeError, ValueError):
+        return fail("Invalid transaction JSON")
+
+    if not isinstance(record, dict):
+        return fail("Invalid transaction structure")
+
+    if record.get("schema") != 2:
+        return fail("Unexpected transaction schema")
+
+    state = record.get("state")
+
+    if state not in STATES:
+        return fail("Unknown transaction state")
+
+    if record.get("tryboot_authorized") is not False:
+        return fail("Unexpected tryboot authorization")
+
+    if record.get("bootctl_confirmed") is not False:
+        return fail("Unexpected BOOTCTL confirmation")
+
+    if state == "installing":
+        return fail("Installation interrupted or in progress")
+
+    if state == "failed":
+        return fail("Installation failed")
+
+    if state == "installed_unverified":
+        if record.get("install_completed") is not True:
+            return fail("Installation completion inconsistent")
+
+        if record.get("rauc_exit_code") != 0:
+            return fail("RAUC exit status inconsistent")
+
+        if record.get("target_verified") is not False:
+            return fail("Unexpected target verification")
+
+        print("TRANSACTION=INSTALLED_UNVERIFIED")
+        print("RAUC_INSTALL_COMPLETED=YES")
+        print("TARGET_VERIFIED=NO")
+        print("TRYBOOT_AUTHORIZED=NO")
+        print("BOOTCTL_MODIFIED=NO")
+        return 0
+
+    # A future verified state requires a separate authenticated
+    # verification protocol. This utility cannot grant permission.
+    return fail("No trusted target verification protocol installed")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

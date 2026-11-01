@@ -58,6 +58,21 @@ done
 mkdir -p "$DATA_DIR/secureedge/config"
 mkdir -p "$DATA_DIR/secureedge/identity"
 
-chmod 0700 "$DATA_DIR/secureedge/identity"
+# Allow the dedicated service group to traverse configuration directories.
+# Private files themselves remain protected separately.
+chown root:secureedge "$DATA_DIR/secureedge"
+chown root:secureedge "$DATA_DIR/secureedge/config"
+chown root:secureedge "$DATA_DIR/secureedge/identity"
+
+chmod 0750 "$DATA_DIR/secureedge"
+chmod 0750 "$DATA_DIR/secureedge/config"
+chmod 0750 "$DATA_DIR/secureedge/identity"
+
+# Persistent RAUC installation coordinator records.
+[ ! -L "$DATA_DIR/secureedge-rauc" ] ||
+    fail "RAUC transaction path is a symlink"
+
+mkdir -p "$DATA_DIR/secureedge-rauc"
+chmod 0700 "$DATA_DIR/secureedge-rauc"
 
 echo "secureedge-data-init: persistent directories ready"

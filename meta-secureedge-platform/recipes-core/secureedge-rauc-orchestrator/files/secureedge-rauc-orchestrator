@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""SecureEdge RAUC installation coordinator.
+
+Real RAUC install support, deliberately without reboot or BOOTCTL writes.
+The resulting record is an audit artifact, not yet an authorization
+to execute tryboot or promote a candidate.
+"""
+
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+STATE = Path("/data/secureedge-rauc")
+LOCK = STATE / "install.lock"
+RECORD = STATE / "last-install.json"
+PENDING = STATE / "bootstate/pending-slot"
+
+
+def die(message):
+    raise SystemExit(f"BLOCKED: {message}")
+
+
+def mounted_data():
+    for line in Path("/proc/mounts").read_text().splitlines():
+        fields = line.split()
+        if len(fields) >= 4 and fields[1] == "/data":
+            return fields[2] == "ext4" and "rw" in fields[3].split(",")
+    return False
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def run(args):
+    return subprocess.run(
+        args,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def atomic_record(data):
+    temp = STATE / "last-install.json.tmp"
+    if temp.exists() or temp.is_symlink():
+        die("Stale temporary record")
+
+    fd = os.open(
+        temp,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+    )
+
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+
+        os.replace(temp, RECORD)
+
+        directory_fd = os.open(STATE, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bundle", required=True)
+    parser.add_argument(
+        "--execute-install",
+        action="store_true",
+        help="Explicitly authorize RAUC installation",
+    )
+    args = parser.parse_args()
+
+    if os.geteuid() != 0:
+        die("Root required")
+
+    if not mounted_data():
+        die("Persistent DATA must be mounted rw as ext4")
+
+    if not STATE.is_dir() or STATE.is_symlink():
+        die("Persistent transaction directory unavailable")
+
+    if PENDING.exists() or PENDING.is_symlink():
+        die("Another trial transaction is pending")
+
+    bundle = Path(args.bundle)
+
+    if not bundle.is_absolute():
+        die("Absolute bundle path required")
+
+    if bundle.is_symlink() or not bundle.is_file():
+        die("Invalid bundle")
+
+    if not args.execute_install:
+        print("INSTALL_EXECUTED=NO")
+        print("REBOOT_EXECUTED=NO")
+        print("BOOTCTL_MODIFIED=NO")
+        return 0
+
+    if RECORD.exists() or RECORD.is_symlink():
+        die("Previous installation record requires review")
+
+    with LOCK.open("a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        if RECORD.exists() or PENDING.exists():
+            die("Transaction already exists")
+
+        digest = sha256(bundle)
+
+        record = {
+            "schema": 2,
+            "state": "installing",
+            "bundle_sha256": digest,
+            "started_at": int(time.time()),
+            "finished_at": None,
+            "rauc_exit_code": None,
+            "install_completed": False,
+            "target_verified": False,
+            "tryboot_authorized": False,
+            "bootctl_confirmed": False,
+        }
+
+        # Must become durable BEFORE invoking RAUC.
+        atomic_record(record)
+
+        try:
+            # RAUC verifies the signed bundle during installation.
+            result = run(["/usr/bin/rauc", "install", str(bundle)])
+            rc = result.returncode
+        except (OSError, subprocess.SubprocessError):
+            rc = -1
+
+        record["rauc_exit_code"] = rc
+        record["finished_at"] = int(time.time())
+
+        if rc == 0:
+            record["state"] = "installed_unverified"
+            record["install_completed"] = True
+        else:
+            record["state"] = "failed"
+
+        atomic_record(record)
+
+        if rc != 0:
+            die("RAUC install failed; transaction retained")
+
+        print("RAUC_INSTALL_COMPLETED=YES")
+        print("TARGET_VERIFIED=NO")
+        print("TRANSACTION_STATE=installed_unverified")
+        print("TRYBOOT_AUTHORIZED=NO")
+        print("BOOTCTL_MODIFIED=NO")
+        print("REBOOT_EXECUTED=NO")
+
+
+if __name__ == "__main__":
+    main()

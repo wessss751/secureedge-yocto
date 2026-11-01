@@ -60,3 +60,6 @@ IMAGE_INSTALL:append = "${@' secureedge-rauc-boot-proof' if (d.getVar('SECUREEDG
 
 # Read-only health gate for the orchestrated RAUC profile.
 IMAGE_INSTALL:append = "${@' secureedge-rauc-orchestrated-health' if d.getVar('SECUREEDGE_RAUC_ORCHESTRATED') == '1' else ''}"
+
+# RAUC installation coordinator, orchestrated image only.
+IMAGE_INSTALL:append = "${@' secureedge-rauc-orchestrator' if d.getVar('SECUREEDGE_RAUC_ORCHESTRATED') == '1' else ''}"
