@@ -75,4 +75,15 @@ chmod 0750 "$DATA_DIR/secureedge/identity"
 mkdir -p "$DATA_DIR/secureedge-rauc"
 chmod 0700 "$DATA_DIR/secureedge-rauc"
 
+
+# Protected inbox for signed RAUC candidate bundles.
+INBOX="$DATA_DIR/secureedge-rauc/inbox"
+
+[ ! -L "$INBOX" ] ||
+    fail "RAUC inbox must not be a symlink"
+
+mkdir -p "$INBOX"
+chown root:root "$INBOX"
+chmod 0700 "$INBOX"
+
 echo "secureedge-data-init: persistent directories ready"

@@ -40,3 +40,21 @@ do_install:append() {
         "${D}${sbindir}/secureedge-rauc-signed-target-verify"
 }
 FILES:${PN}:append = " ${sbindir}/secureedge-rauc-signed-target-verify"
+
+# Hardware installation service: installed but never auto-enabled.
+SRC_URI:append = " file://secureedge-rauc-install.service"
+
+inherit systemd
+
+SYSTEMD_SERVICE:${PN} = "secureedge-rauc-install.service"
+SYSTEMD_AUTO_ENABLE:${PN} = "disable"
+
+do_install:append() {
+    install -d "${D}${systemd_system_unitdir}"
+
+    install -m 0644 \
+        "${WORKDIR}/secureedge-rauc-install.service" \
+        "${D}${systemd_system_unitdir}/secureedge-rauc-install.service"
+}
+
+FILES:${PN}:append = " ${systemd_system_unitdir}/secureedge-rauc-install.service"

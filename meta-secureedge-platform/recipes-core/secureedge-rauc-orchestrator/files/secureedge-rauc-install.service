@@ -1,0 +1,18 @@
+[Unit]
+Description=SecureEdge guarded RAUC A-to-B installation
+Requires=data.mount secureedge-data-init.service
+After=data.mount secureedge-data-init.service
+RequiresMountsFor=/data
+ConditionPathExists=/etc/secureedge/rauc-install.enabled
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=yes
+TimeoutStartSec=30min
+ExecStart=/usr/sbin/secureedge-rauc-orchestrator --bundle=/data/secureedge-rauc/inbox/candidate.raucb --execute-install
+
+[Install]
+WantedBy=multi-user.target

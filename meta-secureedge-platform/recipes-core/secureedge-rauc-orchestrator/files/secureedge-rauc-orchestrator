@@ -82,6 +82,43 @@ def atomic_record(data):
             temp.unlink()
 
 
+def require_hardware_install_authorization(bundle):
+    """Fail closed unless a privileged operator prepared this A system."""
+    import stat
+
+    marker = Path("/etc/secureedge/rauc-install.enabled")
+    inbox = Path("/data/secureedge-rauc/inbox")
+    expected = inbox / "candidate.raucb"
+
+    if marker.is_symlink() or not marker.is_file():
+        die("Hardware installation is not enabled")
+
+    ms = marker.stat()
+    if ms.st_uid != 0 or stat.S_IMODE(ms.st_mode) != 0o600:
+        die("Unsafe installation authorization")
+
+    if bundle != expected:
+        die("Only the designated candidate bundle is accepted")
+
+    if inbox.is_symlink() or not inbox.is_dir():
+        die("Invalid bundle inbox")
+
+    ds = inbox.stat()
+    if ds.st_uid != 0 or stat.S_IMODE(ds.st_mode) != 0o700:
+        die("Unsafe bundle inbox permissions")
+
+    bs = bundle.stat()
+    if bs.st_uid != 0 or stat.S_IMODE(bs.st_mode) != 0o600:
+        die("Unsafe bundle permissions")
+
+    cmdline = Path("/proc/cmdline").read_text().split()
+
+    if (
+        cmdline.count("root=/dev/mmcblk0p5") != 1
+        or cmdline.count("rauc.slot=system0") != 1
+    ):
+        die("Installation allowed only while running system A")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle", required=True)
@@ -117,6 +154,8 @@ def main():
         print("REBOOT_EXECUTED=NO")
         print("BOOTCTL_MODIFIED=NO")
         return 0
+
+    require_hardware_install_authorization(bundle)
 
     if RECORD.exists() or RECORD.is_symlink():
         die("Previous installation record requires review")
