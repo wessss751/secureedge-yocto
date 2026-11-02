@@ -11,6 +11,12 @@ target:
   - secureedge-image-dev
 
 repos:
+  meta-rauc:
+    url: https://github.com/rauc/meta-rauc.git
+    branch: scarthgap
+    commit: d63878f20eba7a85ecf53566e7a3377e78bb46ac
+    layers:
+      .:
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
     branch: scarthgap
