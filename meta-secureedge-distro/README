@@ -1,41 +1,27 @@
-This README file contains information on the contents of the meta-secureedge-distro layer.
+meta-secureedge-distro
+=====================
 
-Please see the corresponding sections below for details.
+Distribution configuration for Yocto Project Scarthgap.
 
-Dependencies
-============
+The secureedge distribution inherits Poky's distribution configuration and sets
+the SecureEdge name, version and SDK vendor. It selects systemd and usrmerge and
+removes sysvinit. Image contents and service hardening belong to the platform
+layer and selected image, not the distribution name alone.
 
-  URI: <first dependency>
-  branch: <branch name>
+Dependencies and integration
+----------------------------
 
-  URI: <second dependency>
-  branch: <branch name>
+The layer declares core and its distribution configuration requires Poky. Kas
+profiles select distro: secureedge with meta-secureedge-platform. Raspberry Pi
+uses raspberrypi0-2w-64; QEMU uses qemuarm64.
 
-  .
-  .
-  .
+See docs/build.md at the repository root for profile dependencies, the current
+base Pi/QEMU parsing blocker and container prerequisites. A distribution or
+machine selection alone is not evidence of a successful build.
 
-Patches
-=======
+License and provenance
+----------------------
 
-Please submit any patches against the meta-secureedge-distro layer to the xxxx mailing list (xxxx@zzzz.org)
-and cc: the maintainer:
-
-Maintainer: XXX YYYYYY <xxx.yyyyyy@zzzzz.com>
-
-Table of Contents
-=================
-
-  I. Adding the meta-secureedge-distro layer to your build
- II. Misc
-
-
-I. Adding the meta-secureedge-distro layer to your build
-=================================================
-
-Run 'bitbake-layers add-layer meta-secureedge-distro'
-
-II. Misc
-========
-
---- replace with specific information about the meta-secureedge-distro layer ---
+COPYING.MIT is retained. External components and platform recipes keep their
+existing declarations. Ownership, copyright attribution and repository-wide
+license scope require an explicit decision before publication.

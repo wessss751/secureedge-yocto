@@ -1,24 +1,65 @@
-# SecureEdge
+# SecureEdge Yocto
 
-**Secure & Reproducible Industrial Embedded Linux Platform**
+SecureEdge is an Embedded Linux project for Raspberry Pi Zero 2 W using Yocto Project Scarthgap. It combines a C telemetry agent, systemd service hardening, MQTT over mutual TLS and signed RAUC updates with separate A/B boot and root filesystem partitions. QEMU ARM64 is included as a development configuration.
 
-An end-to-end industrial Embedded Linux project built with Yocto Project, Docker and KAS.
+## Features
 
-## Target platforms
+- Custom platform and distribution layers with Kas build profiles.
+- C agent using libmosquitto to publish synthetic temperature and voltage readings on per-device topics.
+- PROD service isolation, a dedicated service identity and restricted maintenance access.
+- Device-local mTLS provisioning; the orchestrated profile selects persistent identity and configuration on DATA.
+- Signed verity-format RAUC bundles, inactive-slot integrity checks and explicit trial arming.
+- Raspberry Pi tryboot tooling and host-side boot/transaction simulations.
 
-- QEMU ARM64 — development and automated testing
-- Raspberry Pi 4 — hardware integration
-- OP-TEE QEMU — trusted execution experiments
+## Architecture
 
-## Planned features
+```text
+C telemetry agent ── MQTT / mutual TLS ── broker
+        └── systemd service isolation (PROD)
 
-- Custom Yocto BSP, distribution and images
-- Linux kernel configuration and Device Tree
-- C/C++ industrial application and systemd integration
-- WIC partitioning and RAUC A/B OTA
-- dm-crypt, dm-verity, SELinux and OP-TEE
-- SDK generation, CI/CD and automated validation
+Signed bundle → RAUC verification/install → inactive B images
+                                                 │
+                                        integrity verification
+                                                 │
+                                         explicit trial arming
+                                                 │
+                               B boot / confirmation / rollback
+                                    (qualification pending)
+
+Storage: BOOTCTL | BOOT_A | BOOT_B | ROOTFS_A | ROOTFS_B | DATA
+```
+
+Watchdog and service-monitor components are available in the source tree; installation and enablement depend on the profile. See [runtime integration](docs/architecture.md#runtime-integration).
 
 ## Project status
 
-Phase A — Development environment setup.
+Reported hardware results include slot A boot (`ROOTFS_A`, `system0`), an active agent, signed bundle verification, and the SecureEdge `10.2-ab-evidence-lab` bundle installed using RAUC on B. B image integrity checks, successful `secureedge-rauc-activation --arm` execution and persistent `trial_armed` state were also reported.
+
+**First boot on B and complete automatic rollback qualification remain pending.** The [validation record](docs/validation.md) separates reported observations from archived evidence. Hardware-rooted secure boot and automated broker-side mTLS health verification are not implemented.
+
+## Reproduction and documentation
+
+The [build guide](docs/build.md) records the current profiles and prerequisites. Static analysis identifies a missing `meta-rauc` dependency in the base Pi and QEMU profiles; those build paths are not verified reproduction instructions. The tracked bundle configuration is rootfs-only `10.1-ab-lab`; the experimental 10.2 bundle depends on local inputs outside a fresh checkout.
+
+| Document | Contents |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Runtime integration, A/B partitions and update stages |
+| [Build](docs/build.md) | Container prerequisites, profile dependencies and reproducibility limits |
+| [Security](docs/security.md) | Hardening, mTLS, signing and confirmation boundaries |
+| [Validation](docs/validation.md) | Hardware observations, host evidence and acceptance gaps |
+| [Roadmap](docs/roadmap.md) | Remaining integration and qualification work |
+
+## Repository layout
+
+- `application/secureedge-agent/`: application sources and C unit tests.
+- `meta-secureedge-platform/`: platform, application, security and RAUC integration.
+- `meta-secureedge-distro/`: distribution configuration.
+- `kas/` and `docker/`: build profiles and container definition.
+- `scripts/` and `tests/rauc/`: provisioning tools, laboratory procedures and host tests.
+- `docs/rauc/`: historical engineering records and acceptance plans.
+
+`secureedge-prod-v1` preserves the production baseline; `feat/rauc-ab` preserves RAUC development. Builds, caches and external layer checkouts are excluded from Git.
+
+## Licensing
+
+Existing [platform](meta-secureedge-platform/COPYING.MIT) and [distribution](meta-secureedge-distro/COPYING.MIT) MIT notices are retained. There is no repository-wide license, and several recipes declare `CLOSED`. Ownership, license scope, copyright attribution and third-party redistribution obligations require an explicit decision before publication; the layer notices do not settle these questions for every payload.

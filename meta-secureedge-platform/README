@@ -1,41 +1,51 @@
-This README file contains information on the contents of the meta-secureedge-platform layer.
+meta-secureedge-platform
+=======================
 
-Please see the corresponding sections below for details.
+Platform integration for Yocto Project Scarthgap, targeting Raspberry Pi Zero 2 W
+(64-bit), with a QEMU ARM64 development configuration.
 
-Dependencies
-============
+Contents and selection
+----------------------
 
-  URI: <first dependency>
-  branch: <branch name>
+- C agent publishing synthetic temperature and voltage telemetry via libmosquitto.
+- Raspberry Pi networking, DEV/PROD images and PROD service isolation.
+- DATA storage, signed RAUC bundles, A/B WIC layout and boot/update tooling.
 
-  URI: <second dependency>
-  branch: <branch name>
+The base image enables the agent service. PROD selects hardening and restricted
+maintenance access. Only the orchestrated profile selects persistent agent
+identity/configuration. Its installation service is disabled by default.
+Watchdog configuration is explicitly selected by the watchdog test profile;
+the standalone orchestrated profile does not select it. The service-monitor
+recipe is available but not selected by the inspected images/profiles, and its
+service is disabled by default. Presence in the layer is not runtime enablement.
 
-  .
-  .
-  .
+Build dependencies
+------------------
 
-Patches
-=======
+The layer declares core, but its current metadata also requires meta-rauc during
+parsing: the bundle recipe inherits bundle, and RAUC appends need matching recipes.
+Base Pi/QEMU profiles omit meta-rauc and therefore have a static parsing blocker.
+See docs/build.md at the repository root before attempting a build.
 
-Please submit any patches against the meta-secureedge-platform layer to the xxxx mailing list (xxxx@zzzz.org)
-and cc: the maintainer:
+Profiles also select Poky and meta-openembedded; Raspberry Pi uses
+meta-raspberrypi. Use with meta-secureedge-distro. Kas layer paths assume
+/workspace; profiles default to DEV, so select the PROD target explicitly.
 
-Maintainer: XXX YYYYYY <xxx.yyyyyy@zzzzz.com>
+The agent recipe compiles recipes-apps/secureedge-agent/files, not application/.
+These copies differ in MQTT implementation and configuration.
 
-Table of Contents
-=================
+Update status
+-------------
 
-  I. Adding the meta-secureedge-platform layer to your build
- II. Misc
+Bundle verification, B installation, image checks and trial arming are reported
+hardware observations. First B boot and complete automatic rollback qualification
+remain pending. See docs/validation.md for archived evidence limits and
+docs/security.md for deliberately blocked and operator-assisted confirmation.
 
+License and provenance
+----------------------
 
-I. Adding the meta-secureedge-platform layer to your build
-=================================================
-
-Run 'bitbake-layers add-layer meta-secureedge-platform'
-
-II. Misc
-========
-
---- replace with specific information about the meta-secureedge-platform layer ---
+COPYING.MIT is retained. Recipe declarations include MIT and CLOSED; ownership,
+copyright attribution, license scope and third-party firmware obligations need
+an explicit publication decision. The layer notice does not settle rights for
+all payloads.
