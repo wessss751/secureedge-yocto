@@ -35,11 +35,13 @@ Watchdog and service-monitor components are available in the source tree; instal
 
 Reported hardware results include slot A boot (`ROOTFS_A`, `system0`), an active agent, signed bundle verification, and the SecureEdge `10.2-ab-evidence-lab` bundle installed using RAUC on B. B image integrity checks, successful `secureedge-rauc-activation --arm` execution and persistent `trial_armed` state were also reported.
 
+Host regression checks passed: 128 RAUC cases, six offline transaction cases and two C test programs. Optimized-Python and import/syntax checks also passed.
+
 **First boot on B and complete automatic rollback qualification remain pending.** The [validation record](docs/validation.md) separates reported observations from archived evidence. Hardware-rooted secure boot and automated broker-side mTLS health verification are not implemented.
 
 ## Reproduction and documentation
 
-The [build guide](docs/build.md) records the current profiles and prerequisites. Static analysis identifies a missing `meta-rauc` dependency in the base Pi and QEMU profiles; those build paths are not verified reproduction instructions. The tracked bundle configuration is rootfs-only `10.1-ab-lab`; the experimental 10.2 bundle depends on local inputs outside a fresh checkout.
+The [build guide](docs/build.md) records the pinned layer dependencies, resolved profiles and recipe-parsing results. The unchanged Dockerfile was built and checked with UID/GID `1000:1000`; no full Yocto image build is claimed. The tracked bundle configuration is rootfs-only `10.1-ab-lab`. The experimental `10.2-ab-evidence-lab` recipe and payloads are retained outside the curated public source tree.
 
 | Document | Contents |
 | --- | --- |

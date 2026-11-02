@@ -24,7 +24,7 @@ Build dependencies
 
 The layer declares core, but its current metadata also requires meta-rauc during
 parsing: the bundle recipe inherits bundle, and RAUC appends need matching recipes.
-Base Pi/QEMU profiles omit meta-rauc and therefore have a static parsing blocker.
+Base Pi/QEMU profiles include pinned meta-rauc for this parsing dependency.
 See docs/build.md at the repository root before attempting a build.
 
 Profiles also select Poky and meta-openembedded; Raspberry Pi uses

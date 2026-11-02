@@ -2,8 +2,7 @@
 
 ## Reproducible build inputs
 
-- Resolve base Pi/QEMU parsing dependencies: include required RAUC metadata or isolate optional recipes/appends in a reviewed configuration change.
-- Pin meta-rauc to a reviewed commit and verify profile parsing.
+- Maintain pinned layer revisions and repeat configuration resolution/parsing when updating them.
 - Reproduce complete boot/rootfs bundles from versioned inputs without external laboratory payload dependencies.
 - Verify the container account mapping and a clean build; record source revisions, artifact hashes and host requirements.
 - Clarify source ownership between the application tree and recipe payload before consolidation.

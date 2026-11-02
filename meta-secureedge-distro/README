@@ -15,8 +15,8 @@ The layer declares core and its distribution configuration requires Poky. Kas
 profiles select distro: secureedge with meta-secureedge-platform. Raspberry Pi
 uses raspberrypi0-2w-64; QEMU uses qemuarm64.
 
-See docs/build.md at the repository root for profile dependencies, the current
-base Pi/QEMU parsing blocker and container prerequisites. A distribution or
+See docs/build.md at the repository root for pinned profile dependencies
+and container prerequisites. A distribution or
 machine selection alone is not evidence of a successful build.
 
 License and provenance

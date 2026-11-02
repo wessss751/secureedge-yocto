@@ -4,7 +4,7 @@
 
 SecureEdge uses Yocto Project Scarthgap. The [distribution layer](../meta-secureedge-distro/README) selects systemd, usrmerge and the distribution identity. The [platform layer](../meta-secureedge-platform/README) contains image recipes, the agent, networking, storage, security policies and RAUC integration.
 
-Kas selects `qemuarm64` or `raspberrypi0-2w-64`. Raspberry Pi Zero 2 W is the hardware target; QEMU does not reproduce its firmware or watchdog behavior. The base profiles currently omit a layer required to parse the platform metadata; see [build dependencies](build.md#current-parsing-dependency).
+Kas selects `qemuarm64` or `raspberrypi0-2w-64`. Raspberry Pi Zero 2 W is the hardware target; QEMU does not reproduce its firmware or watchdog behavior. The base profiles include pinned meta-rauc metadata required by the platform layer; see [build dependencies](build.md#current-parsing-dependency).
 
 ## Runtime integration
 

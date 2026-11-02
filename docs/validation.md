@@ -1,6 +1,6 @@
 # Validation record
 
-Status reviewed on 2026-11-02. Reported hardware observations, archived records and source inspection are distinct evidence categories. Code and checklists describe behavior or requirements; they do not prove execution.
+Status reviewed on 2026-11-03. Reported hardware observations, archived records and source inspection are distinct evidence categories. Code and checklists describe behavior or requirements; they do not prove execution.
 
 ## Reported Raspberry Pi Zero 2 W observations
 
@@ -9,8 +9,8 @@ Status reviewed on 2026-11-02. Reported hardware observations, archived records 
 | Slot A boot: ROOTFS_A, `rauc.slot=system0` | [Phase 9](rauc/phase9-final-validation.md) reports A operation; tracked command line maps A to system0 | No corresponding command-line or firmware capture |
 | SecureEdge Agent active | Phase 9 reports agent operation | No recent service log or telemetry capture |
 | Signed SecureEdge bundle verification observed | Signing/verification implementation exists | No verification transcript for the reported 10.2 bundle |
-| SecureEdge `10.2-ab-evidence-lab` bundle installed using RAUC on B | Local experimental recipe describes boot/rootfs slots and bundle version | No RAUC completion log; the local recipe is untracked |
-| B image integrity verification performed | Signed-target checker exists; local payload recipe specifies expected hashes/sizes | No captured post-install audit result |
+| SecureEdge `10.2-ab-evidence-lab` bundle installed using RAUC on B | The experimental recipe and payloads are retained outside this curated source tree | No RAUC completion log or 10.2 build inputs are archived here |
+| B image integrity verification performed | Signed-target checker exists; the 10.2 payload inputs are outside this tree | No captured post-install audit result |
 | Activation arm service completed successfully (`secureedge-rauc-activation --arm`) | Tracked executable implements explicit arming separately from reboot | No arming invocation or service log |
 | Persistent `trial_armed` state verified | Activation writes this state after its signed-target audit | No sanitized device transaction record |
 
@@ -29,16 +29,28 @@ The [Phase 10](rauc/phase10-signed-bundle.md) and [Phase 11 acceptance](rauc/pha
 
 ## Source inspection findings
 
-- Base Pi/QEMU profiles omit `meta-rauc` while platform metadata requires its class and recipes. This is a static parsing blocker, not an executed build failure.
+- Base Pi/QEMU profiles now supply pinned `meta-rauc` metadata. Configuration resolution and parsing results are distinguished from image builds in the [build guide](build.md).
 - Orchestrated health emits `MQTT_MTLS_VERIFIED=NO`; `--confirm-check` deliberately blocks. Laboratory confirmation relies on operator-reviewed telemetry.
 - The standalone orchestrated profile does not select the watchdog package required by its health check. Service-monitor installation/enablement is also not automatic.
-- The tracked `10.1-ab-lab` bundle is rootfs-only; local 10.2 boot/rootfs payloads are not reproducible from a fresh checkout.
+- The tracked `10.1-ab-lab` bundle is rootfs-only. The experimental `10.2-ab-evidence-lab` recipe and payloads are retained outside the curated public source tree and cannot be reproduced from this checkout.
 
-## Documentation checks
+## Verified host regression results
 
-The 2026-11-02 audit parsed 34 Python files without execution and scanned working files and 208 historical blobs for selected secret signatures. No matching private-key, AWS access-ID or GitHub-token signature was detected. Later documentation checks validated local Markdown links, whitespace and selected sensitive patterns. These checks do not establish functional correctness or exhaustive secret clearance.
+Phase 7 results were repeated against the curated host-test source introduced by `0b60b35`. These are isolated host checks, not Raspberry Pi boot or rollback qualification.
 
-No Yocto/Kas build, C test, RAUC functional test or hardware operation was executed for these documentation revisions. ShellCheck, Gitleaks and Kas were unavailable in the inspected host PATH. Build examples remain unexecuted.
+| Check | Result |
+| --- | --- |
+| RAUC host regression suite | 128 passing cases |
+| Offline OTA transaction suite | Six passing cases |
+| C sensor and configuration programs | Two passing programs, compiled with warnings as errors and assertions enabled |
+| Optimized Python (`-O`) | 35 hardened host cases and six transaction cases passed; these repeat existing cases |
+| Import and syntax checks | Corrected runners import without launching subprocesses; 35 Python files parse successfully |
+
+Backend operations use temporary fixtures with mocked host-wide `sync`. Health/service checks use mocks; boot proof uses offline fixtures. No live installation, activation, confirmation, reboot or device operation was performed.
+
+External-image FAT tests and full Yocto image builds were not executed during Phase 7. They remain outside these host regression results. Current configuration/container/parsing checks are recorded separately in the [build guide](build.md); parsing does not demonstrate a successful image build.
+
+Documentation links, whitespace and selected secret signatures are also checked. Such checks do not establish exhaustive secret clearance or hardware acceptance.
 
 ## Required acceptance evidence
 
