@@ -1,101 +1,91 @@
 #!/usr/bin/env python3
-"""Integrated offline transaction state-machine tests."""
+"""Offline state-machine tests using self-created temporary fixtures."""
 
 import json
+import os
 import subprocess
+import sys
 import tempfile
+import unittest
 from pathlib import Path
 
-TOOL = Path(__file__).with_name(
-    "secureedge-ota-transaction-lab.py"
-).resolve()
+TOOL = Path(__file__).with_name("secureedge-ota-transaction-lab.py").resolve()
 
-def run(root, action, primary=None, candidate=None):
-    command = [
-        "python3", str(TOOL),
-        "--lab-root", str(root),
-        "--action", action,
-    ]
-    if primary:
-        command += ["--primary", primary]
-    if candidate:
-        command += ["--candidate", candidate]
 
-    return subprocess.run(
-        command, text=True, capture_output=True
-    )
+class TransactionLabTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="secureedge-ota-test-", dir="/tmp")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        (self.root / ".secureedge-offline-lab").touch()
 
-def setup(primary="system0", candidate="system1"):
-    temp = tempfile.TemporaryDirectory()
-    root = Path(temp.name)
-    (root / ".secureedge-offline-lab").touch()
+    def run_action(self, action, primary=None, candidate=None):
+        command = [sys.executable, "-B", str(TOOL), "--lab-root", str(self.root), "--action", action]
+        if primary is not None:
+            command += ["--primary", primary]
+        if candidate is not None:
+            command += ["--candidate", candidate]
+        return subprocess.run(
+            command, cwd=self.root,
+            env={"PATH": os.defpath, "HOME": str(self.root), "LC_ALL": "C"},
+            capture_output=True, text=True, timeout=10, check=False,
+        )
 
-    result = run(root, "init", primary, candidate)
-    assert result.returncode == 0, result.stderr
+    def read_state(self):
+        return json.loads((self.root / "transaction.json").read_text())["state"]
 
-    return temp, root
+    def initialize(self, primary="system0", candidate="system1"):
+        result = self.run_action("init", primary, candidate)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.read_state(), "STABLE")
 
-def state(root):
-    return json.loads(
-        (root / "transaction.json").read_text()
-    )["state"]
+    def advance(self, action, expected):
+        result = self.run_action(action)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.read_state(), expected)
+        self.assertIn("REAL_BOOTCTL_WRITES=NO", result.stdout.splitlines())
+        self.assertIn("REAL_REBOOT=NO", result.stdout.splitlines())
 
-# 1. Nominal A -> B
-tmp, root = setup()
-for action, expected in (
-    ("installed", "INSTALLED"),
-    ("arm-trial", "TRIAL_ARMED"),
-    ("verified-boot", "TRIAL_VERIFIED"),
-    ("commit", "COMMITTED"),
-):
-    assert run(root, action).returncode == 0
-    assert state(root) == expected
-print("PASS: nominal A -> B")
-tmp.cleanup()
+    def reject(self, action, reason, primary=None, candidate=None):
+        before = (self.root / "transaction.json").read_bytes()
+        result = self.run_action(action, primary, candidate)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, f"BLOCKED: {reason}\n")
+        self.assertEqual(result.stdout, "")
+        self.assertEqual((self.root / "transaction.json").read_bytes(), before)
 
-# 2. Nominal B -> A
-tmp, root = setup("system1", "system0")
-for action in (
-    "installed", "arm-trial", "verified-boot", "commit"
-):
-    assert run(root, action).returncode == 0
-assert state(root) == "COMMITTED"
-print("PASS: nominal B -> A")
-tmp.cleanup()
+    def test_nominal_a_to_b(self):
+        self.initialize()
+        for action, expected in (("installed", "INSTALLED"), ("arm-trial", "TRIAL_ARMED"),
+                                 ("verified-boot", "TRIAL_VERIFIED"), ("commit", "COMMITTED")):
+            self.advance(action, expected)
 
-# 3. Reject premature confirmation
-tmp, root = setup()
-assert run(root, "commit").returncode != 0
-assert state(root) == "STABLE"
-print("PASS: premature commit rejected")
-tmp.cleanup()
+    def test_nominal_b_to_a(self):
+        self.initialize("system1", "system0")
+        for action, expected in (("installed", "INSTALLED"), ("arm-trial", "TRIAL_ARMED"),
+                                 ("verified-boot", "TRIAL_VERIFIED"), ("commit", "COMMITTED")):
+            self.advance(action, expected)
 
-# 4. Abort before trial
-tmp, root = setup()
-assert run(root, "installed").returncode == 0
-assert run(root, "abort").returncode == 0
-assert state(root) == "ABORTED"
-assert run(root, "commit").returncode != 0
-print("PASS: aborted candidate cannot be committed")
-tmp.cleanup()
+    def test_premature_confirmation(self):
+        self.initialize()
+        self.reject("commit", "Forbidden transition: STABLE -> commit")
 
-# 5. Abort after trial preparation
-tmp, root = setup()
-assert run(root, "installed").returncode == 0
-assert run(root, "arm-trial").returncode == 0
-assert run(root, "abort").returncode == 0
-assert state(root) == "ABORTED"
-print("PASS: trial failure blocks promotion")
-tmp.cleanup()
+    def test_abort_before_trial(self):
+        self.initialize()
+        self.advance("installed", "INSTALLED")
+        self.advance("abort", "ABORTED")
+        self.reject("commit", "Forbidden transition: ABORTED -> commit")
 
-# 6. Reject duplicate initialization
-tmp, root = setup()
-assert run(
-    root, "init", "system0", "system1"
-).returncode != 0
-assert state(root) == "STABLE"
-print("PASS: duplicate transaction rejected")
-tmp.cleanup()
+    def test_abort_after_trial_preparation(self):
+        self.initialize()
+        self.advance("installed", "INSTALLED")
+        self.advance("arm-trial", "TRIAL_ARMED")
+        self.advance("abort", "ABORTED")
 
-print("PHASE_11_TRANSACTION_LAB=PASS")
-print("HARDWARE_OTA=NO-GO")
+    def test_duplicate_initialization(self):
+        self.initialize()
+        self.reject("init", "Existing transaction", "system0", "system1")
+
+
+if __name__ == "__main__":
+    unittest.main()
