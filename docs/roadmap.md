@@ -18,7 +18,8 @@
 
 ## Public release decisions
 
-- Confirm ownership and intended license scope, including components marked `CLOSED`, copyright attribution and third-party/firmware obligations. Existing notices remain in place pending that decision.
+- Review ownership, payload licenses, third-party/firmware obligations and Yocto license/checksum metadata for the 16 recipes still declaring `CLOSED`. The [approved MIT scope](../README.md#licensing) covers original SecureEdge-owned material; complete recipe-license alignment remains pending.
+- Obtain separate owner approval before GitHub publication.
 - Review local experimental work and identify the versioned inputs required for reproduction.
 - Define signing-key custody, trust-anchor and certificate-lifecycle policies.
 - Add CI after reviewing host-test isolation and dependencies.

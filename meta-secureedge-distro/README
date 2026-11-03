@@ -22,6 +22,8 @@ machine selection alone is not evidence of a successful build.
 License and provenance
 ----------------------
 
-COPYING.MIT is retained. External components and platform recipes keep their
-existing declarations. Ownership, copyright attribution and repository-wide
-license scope require an explicit decision before publication.
+COPYING.MIT is preserved unchanged. The root LICENSE grants MIT licensing for
+original SecureEdge-owned source, scripts, tests, configuration and documentation,
+subject to third-party exceptions described in the root README.md Licensing
+section. External components retain their own licenses. Platform recipes declaring
+CLOSED remain unchanged pending a separate ownership and license-metadata review.

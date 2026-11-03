@@ -45,7 +45,9 @@ docs/security.md for deliberately blocked and operator-assisted confirmation.
 License and provenance
 ----------------------
 
-COPYING.MIT is retained. Recipe declarations include MIT and CLOSED; ownership,
-copyright attribution, license scope and third-party firmware obligations need
-an explicit publication decision. The layer notice does not settle rights for
-all payloads.
+COPYING.MIT is preserved unchanged. The root LICENSE grants MIT licensing for
+original SecureEdge-owned source, scripts, tests, configuration and documentation,
+subject to third-party exceptions described in the root README.md Licensing
+section. Third-party components and firmware retain their own license obligations.
+The 16 recipes declaring CLOSED remain unchanged and require separate ownership,
+payload and license-metadata review before complete alignment can be claimed.

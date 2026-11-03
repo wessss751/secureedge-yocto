@@ -64,4 +64,23 @@ The [build guide](docs/build.md) records the pinned layer dependencies, resolved
 
 ## Licensing
 
-Existing [platform](meta-secureedge-platform/COPYING.MIT) and [distribution](meta-secureedge-distro/COPYING.MIT) MIT notices are retained. There is no repository-wide license, and several recipes declare `CLOSED`. Ownership, license scope, copyright attribution and third-party redistribution obligations require an explicit decision before publication; the layer notices do not settle these questions for every payload.
+Original SecureEdge-owned source, scripts, tests, configuration and documentation
+are licensed under the [MIT License](LICENSE).
+Copyright (c) 2026 wissem
+
+This grant applies to original SecureEdge-owned material only. Third-party
+components, dependencies, firmware and any material carrying separate notices
+remain subject to their respective licenses and redistribution requirements;
+the root license does not relicense them. Existing [platform](meta-secureedge-platform/COPYING.MIT)
+and [distribution](meta-secureedge-distro/COPYING.MIT) MIT notices are preserved
+unchanged. External Yocto layers and their payloads retain their own licenses;
+firmware license acceptance does not establish redistribution permission.
+
+**Recipe metadata remains inconsistent with this licensing decision:** 16 recipes
+still declare `LICENSE = "CLOSED"`. Those declarations are unchanged. A separate
+review must establish each recipe's source and payload ownership, applicable
+licenses, third-party obligations and required Yocto license/checksum metadata
+before updating those declarations or claiming complete license alignment.
+
+GitHub publication requires separate owner approval and is not authorized by
+this licensing decision.
