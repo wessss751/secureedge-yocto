@@ -1,4 +1,3 @@
-# SecureEdge PROD - restricted maintenance privileges
 
 Cmnd_Alias SECUREEDGE_RESTART = /bin/systemctl restart secureedge-agent.service, /usr/bin/systemctl restart secureedge-agent.service
 

@@ -1,5 +1,4 @@
 #!/bin/sh
-# SecureEdge persistent DATA initialization
 
 set -eu
 umask 077
@@ -13,7 +12,6 @@ fail() {
     exit 1
 }
 
-# Never initialize directories on the rootfs.
 awk '
     $2 == "/data" && $3 == "ext4" {
         found = 1
@@ -26,7 +24,6 @@ awk '
 [ ! -L "$DATA_DIR" ] ||
     fail "/data must not be a symlink"
 
-# Prevent unexpected symlink redirection.
 for path in \
     "$RAUC_DIR" \
     "$DATA_DIR/secureedge-rauc" \
@@ -36,7 +33,6 @@ do
         fail "Symlink forbidden: $path"
 done
 
-# Create persistent directories.
 mkdir -p "$RAUC_DIR"
 mkdir -p "$BOOTSTATE_DIR"
 
@@ -45,8 +41,6 @@ chmod 0700 "$DATA_DIR/secureedge-rauc"
 chmod 0700 "$BOOTSTATE_DIR"
 
 
-# Persistent device configuration for RAUC A/B.
-# Never create or overwrite device credentials here.
 for path in \
     "$DATA_DIR/secureedge" \
     "$DATA_DIR/secureedge/config" \
@@ -58,8 +52,6 @@ done
 mkdir -p "$DATA_DIR/secureedge/config"
 mkdir -p "$DATA_DIR/secureedge/identity"
 
-# Allow the dedicated service group to traverse configuration directories.
-# Private files themselves remain protected separately.
 chown root:secureedge "$DATA_DIR/secureedge"
 chown root:secureedge "$DATA_DIR/secureedge/config"
 chown root:secureedge "$DATA_DIR/secureedge/identity"
@@ -68,7 +60,6 @@ chmod 0750 "$DATA_DIR/secureedge"
 chmod 0750 "$DATA_DIR/secureedge/config"
 chmod 0750 "$DATA_DIR/secureedge/identity"
 
-# Persistent RAUC installation coordinator records.
 [ ! -L "$DATA_DIR/secureedge-rauc" ] ||
     fail "RAUC transaction path is a symlink"
 
@@ -76,7 +67,6 @@ mkdir -p "$DATA_DIR/secureedge-rauc"
 chmod 0700 "$DATA_DIR/secureedge-rauc"
 
 
-# Protected inbox for signed RAUC candidate bundles.
 INBOX="$DATA_DIR/secureedge-rauc/inbox"
 
 [ ! -L "$INBOX" ] ||

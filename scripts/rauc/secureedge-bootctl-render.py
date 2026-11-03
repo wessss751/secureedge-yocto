@@ -27,7 +27,6 @@ def render(source, current, target):
         f"boot_partition={PARTITIONS[target]}\n"
     )
 
-    # Reject unknown, ambiguous or malformed layouts.
     if source.replace("\r\n", "\n") != expected:
         raise ValueError("Unexpected BOOTCTL configuration")
 
@@ -50,7 +49,6 @@ def main():
 
     source_path = Path(args.source).resolve()
 
-    # Never read the live BOOTCTL mount.
     if source_path == Path("/bootctl") or (
         Path("/bootctl") in source_path.parents
     ):
@@ -65,7 +63,6 @@ def main():
         args.target,
     )
 
-    # Output only. Never writes to BOOTCTL.
     sys.stdout.write(result)
 
 

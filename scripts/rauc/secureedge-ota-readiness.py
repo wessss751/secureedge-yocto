@@ -230,8 +230,6 @@ def audit():
         else:
             record(name, "FAIL", "Laboratory source missing")
 
-    # These are intentionally NOT inferred from source files.
-    # A passing syntax check is not a successful hardware OTA.
     blockers = [
         "RAUC set-primary hardware contract not demonstrated",
         "Authenticated completed-install transaction not demonstrated",

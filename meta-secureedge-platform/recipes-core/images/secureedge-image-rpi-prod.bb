@@ -3,7 +3,6 @@ DESCRIPTION = "Production-oriented SecureEdge Linux image with reduced developme
 
 require secureedge-image-rpi-dev.bb
 
-# Disable development and insecure login features.
 IMAGE_FEATURES:remove = " \
     debug-tweaks \
     allow-empty-password \
@@ -16,7 +15,6 @@ IMAGE_FEATURES:remove = " \
     tools-sdk \
 "
 
-# Prevent development settings inherited from build configuration.
 EXTRA_IMAGE_FEATURES:remove = " \
     debug-tweaks \
     allow-empty-password \
@@ -29,7 +27,6 @@ EXTRA_IMAGE_FEATURES:remove = " \
     tools-sdk \
 "
 IMAGE_INSTALL:append = " secureedge-hardening"
-# Dedicated SSH maintenance account for PROD.
 inherit extrausers
 
 EXTRA_USERS_PARAMS:append = " \
@@ -52,14 +49,10 @@ secureedge_prod_enable_timewait() {
 
 ROOTFS_POSTPROCESS_COMMAND:append = " secureedge_prod_enable_timewait; "
 
-# Laboratory-only RAUC trial preflight helper.
 IMAGE_INSTALL:append = "${@' secureedge-rauc-trial' if d.getVar('SECUREEDGE_RAUC_CUSTOM_TEST') == '1' else ''}"
 
-# RAUC boot evidence verifier: laboratory custom backend only.
 IMAGE_INSTALL:append = "${@' secureedge-rauc-boot-proof' if (d.getVar('SECUREEDGE_RAUC_CUSTOM_TEST') == '1' or d.getVar('SECUREEDGE_RAUC_ORCHESTRATED') == '1') else ''}"
 
-# Read-only health gate for the orchestrated RAUC profile.
 IMAGE_INSTALL:append = "${@' secureedge-rauc-orchestrated-health' if d.getVar('SECUREEDGE_RAUC_ORCHESTRATED') == '1' else ''}"
 
-# RAUC installation coordinator, orchestrated image only.
 IMAGE_INSTALL:append = "${@' secureedge-rauc-orchestrator' if d.getVar('SECUREEDGE_RAUC_ORCHESTRATED') == '1' else ''}"

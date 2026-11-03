@@ -35,7 +35,6 @@ def main():
 
     root = Path(args.lab_root).absolute()
 
-    # Reject direct access to production mount points.
     if root.is_symlink() or root.resolve() in (
         Path("/"),
         Path("/bootctl"),
@@ -100,8 +99,6 @@ def main():
     if sha256(new_data) != new_hash:
         decision("BLOCKED", "New configuration digest mismatch")
 
-    # The original file may contain harmless formatting differences.
-    # Its exact original digest is authoritative if supplied.
     is_old = sha256(current) == old_hash
     is_new = current == new_data and sha256(current) == new_hash
 

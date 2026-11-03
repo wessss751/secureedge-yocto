@@ -194,7 +194,6 @@ def cmd(command):
 
 def lab_guard():
     root_owned_file(LAB_MARKER)
-    # Deliberately no auto-creation of authorization marker.
 
 
 def check_bundle(bundle):
@@ -235,8 +234,6 @@ def trial():
     record['state'] = 'trial_dispatched'
     record['tryboot_dispatched_at'] = int(time.time())
     atomic_record(record)
-    # Official Raspberry Pi one-shot syntax: ONE argument, '0 tryboot'.
-    # If the OS does not reboot, operator recovery is required; no retries.
     cmd(['/sbin/reboot', '0 tryboot'])
     print('REBOOT_REQUESTED=YES')
 
@@ -258,7 +255,6 @@ def confirm_check():
     if 'MQTT_MTLS_VERIFIED=YES' not in health.splitlines():
         print('CONFIRMATION=BLOCKED\nREASON=MQTT_MTLS_DELIVERY_NOT_VERIFIED')
         return 3
-    # Deliberately no BOOTCTL write: FAT power-loss recovery is not qualified.
     print('CONFIRMATION=BLOCKED\nREASON=FAT_BOOTCTL_RECOVERY_NOT_QUALIFIED')
     return 3
 

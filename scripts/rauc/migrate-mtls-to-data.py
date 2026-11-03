@@ -111,7 +111,6 @@ def main():
 
         files[key] = (real_source, f"identity/tls-{index}.pem")
 
-    # All preflight checks passed.
     (DEST / "config").mkdir(parents=True, mode=0o750)
     (DEST / "identity").mkdir(mode=0o750)
 

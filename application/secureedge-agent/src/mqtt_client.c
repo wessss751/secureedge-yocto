@@ -17,9 +17,6 @@ static atomic_bool connected = ATOMIC_VAR_INIT(false);
 static bool library_initialized = false;
 static bool loop_started = false;
 
-/*
- * Called when the broker accepts or rejects our MQTT connection.
- */
 static void on_connect(
     struct mosquitto *mosq,
     void *userdata,
@@ -38,9 +35,6 @@ static void on_connect(
     }
 }
 
-/*
- * Called when the MQTT connection is interrupted or closed.
- */
 static void on_disconnect(
     struct mosquitto *mosq,
     void *userdata,
@@ -120,9 +114,6 @@ log_info("MQTT topic configured: %s", mqtt_topic);
     mosquitto_connect_callback_set(client, on_connect);
     mosquitto_disconnect_callback_set(client, on_disconnect);
 
-    /*
-     * Retry after 5 seconds, increasing up to 30 seconds.
-     */
     rc = mosquitto_reconnect_delay_set(client, 5, 30, true);
 
     if (rc != MOSQ_ERR_SUCCESS) {
@@ -132,9 +123,6 @@ log_info("MQTT topic configured: %s", mqtt_topic);
         return false;
     }
 
-    /*
-     * Configure an asynchronous connection.
-     */
     rc = mosquitto_connect_async(client, host, port, 60);
 
     if (rc != MOSQ_ERR_SUCCESS) {
@@ -144,9 +132,6 @@ log_info("MQTT topic configured: %s", mqtt_topic);
         return false;
     }
 
-    /*
-     * Start a background thread to process MQTT network traffic.
-     */
     rc = mosquitto_loop_start(client);
 
     if (rc != MOSQ_ERR_SUCCESS) {

@@ -1,21 +1,14 @@
-# p1 - Initial firmware and boot selection
 part --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label BOOTCTL --active --fixed-size 64 --align 4096
 
-# p2 - Boot slot A
 part --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label BOOT_A --fixed-size 192 --align 4096
 
-# p3 - Boot slot B
 part --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label BOOT_B --fixed-size 192 --align 4096
 
-# p4 is automatically reserved for the extended partition
 
-# p5 - Root filesystem A
 part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label ROOTFS_A --fixed-size 512 --align 4096 --no-fstab-update
 
-# p6 - Root filesystem B
 part --source rootfs --ondisk mmcblk0 --fstype=ext4 --label ROOTFS_B --fixed-size 512 --align 4096 --no-fstab-update
 
-# p7 - Persistent data
 part --ondisk mmcblk0 --fstype=ext4 --label DATA --fixed-size 1024 --align 4096
 
 bootloader --ptable msdos

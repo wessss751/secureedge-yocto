@@ -10,7 +10,6 @@ fail() {
 
 BACKEND="$1"
 
-# Never accept a production test-path override.
 [ "${SECUREEDGE_TEST_MODE:-0}" != "1" ] ||
     fail "Simulation mode not permitted for hardware health proof"
 

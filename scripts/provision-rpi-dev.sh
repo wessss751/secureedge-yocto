@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SecureEdge - offline provisioning of an already-flashed Raspberry Pi DEV card.
-# Usage:
-#   sudo ./scripts/provision-rpi-dev.sh ROOT_MOUNT BOOT_MOUNT WPA_FILE SSH_PUBLIC_KEY MQTT_HOST
-# Never store the WPA file or any private SSH key in Git.
 
 fail() {
     printf 'ERREUR : %s\n' "$*" >&2
@@ -28,7 +24,6 @@ MQTT_HOST="$5"
 mountpoint -q -- "$ROOT" || fail 'ROOT doit etre un point de montage.'
 mountpoint -q -- "$BOOT" || fail 'BOOT doit etre un point de montage.'
 
-# Fail closed: provisioning is permitted only on two partitions of one USB reader.
 ROOT_DEVICE="$(findmnt -n -o SOURCE --mountpoint "$ROOT")"
 BOOT_DEVICE="$(findmnt -n -o SOURCE --mountpoint "$BOOT")"
 [[ "$ROOT_DEVICE" == /dev/* && "$BOOT_DEVICE" == /dev/* ]] || fail 'sources de partitions inattendues.'

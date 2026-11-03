@@ -114,7 +114,6 @@ def main():
     except (OSError, ValueError, UnicodeError) as exc:
         parser.error(str(exc))
 
-    # Write a new offline artifact with exclusive creation.
     with destination.open("x", encoding="utf-8") as stream:
         stream.write(new_content)
 

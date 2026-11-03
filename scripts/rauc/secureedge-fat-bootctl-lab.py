@@ -40,7 +40,6 @@ def parse(data):
     except UnicodeDecodeError:
         fail("BOOTCTL is not ASCII")
 
-    # Deliberately strict for the SecureEdge lab profile.
     sections = {}
     current = None
 
@@ -147,8 +146,6 @@ def main():
 
     root = Path(args.lab_root).absolute()
 
-    # Restrict this demonstration to an ordinary temporary
-    # directory. Do not follow symlinks or use mounted devices.
     if root.is_symlink():
         fail("Lab directory symlink forbidden")
 
@@ -195,11 +192,8 @@ def main():
 
     updated = render(old_trial, old_primary)
 
-    # Copy the complete FAT image: never edit the original.
     shutil.copyfile(original, output)
 
-    # This is a laboratory write, not a power-safe
-    # production BOOTCTL transaction.
     fat_write(output, updated)
 
     readback = fat_read(output)

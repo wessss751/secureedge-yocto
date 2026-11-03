@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# SecureEdge DEV: provision mTLS offline onto a freshly flashed Raspberry Pi USB microSD.
-# Usage: sudo ./scripts/provision-rpi-mtls.sh ROOT_MOUNT PRIVATE_PKI_DIR BROKER_IPV4
 set -euo pipefail
 umask 077
 
@@ -16,7 +14,6 @@ ROOT="$(realpath -e -- "$1")"
 PKI="$(realpath -e -- "$2")"
 BROKER="$3"
 
-# Prevent shell substitutions, invalid IPv4s, and accidental changes to /.
 [[ "$ROOT" != / ]] || { echo 'ERROR: refusing to provision /.' >&2; exit 1; }
 python3 - "$BROKER" <<'PY'
 import ipaddress
@@ -66,7 +63,6 @@ for f in "$CA" "$CERT" "$KEY"; do
     [[ -s "$f" ]] || { echo "ERROR: required PKI file absent: $f" >&2; exit 1; }
 done
 
-# Verify the certificate chain and ensure the client key matches its certificate.
 openssl verify -CAfile "$CA" -purpose sslclient "$CERT"
 CERT_PUB="$(openssl x509 -in "$CERT" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1)"
 KEY_PUB="$(openssl pkey -in "$KEY" -pubout -outform DER | sha256sum | cut -d' ' -f1)"
@@ -101,7 +97,6 @@ EOF
 chown root:root "$DROPIN/20-mtls.conf"
 chmod 0644 "$DROPIN/20-mtls.conf"
 
-# The host is an IPv4 literal, validated above (safe as a sed replacement).
 sed -i \
     -e "s/^mqtt_host=.*/mqtt_host=$BROKER/" \
     -e 's/^mqtt_port=.*/mqtt_port=8883/' \

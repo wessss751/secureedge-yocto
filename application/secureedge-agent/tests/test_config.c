@@ -26,7 +26,6 @@ int main(void)
 
     agent_config_t config;
 
-    /* Test 1: valid configuration */
     write_config(
         file,
         "mqtt_host=127.0.0.1\n"
@@ -42,14 +41,12 @@ int main(void)
     assert(strcmp(config.device_id, "device02") == 0);
     assert(config.sampling_interval == 2);
 
-    /* Test 2: invalid MQTT port */
     assert(freopen(path, "w", file) != NULL);
 
     write_config(file, "mqtt_port=99999\n");
 
     assert(config_load(path, &config) == false);
 
-    /* Test 3: unknown key */
     assert(freopen(path, "w", file) != NULL);
 
     write_config(file, "unknown_parameter=test\n");

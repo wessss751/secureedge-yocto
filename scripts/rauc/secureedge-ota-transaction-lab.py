@@ -78,7 +78,6 @@ def main():
     if root.is_symlink():
         fail("Symlink laboratory root refused")
 
-    # Lab work is forbidden against production filesystem locations.
     resolved = root.resolve()
     if resolved in (
         Path("/"), Path("/bootctl"), Path("/data"),

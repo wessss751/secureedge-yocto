@@ -86,5 +86,4 @@ echo "NO DEVICE WRITES"
 echo "NO RAUC INSTALL"
 echo "NO REBOOT"
 
-# Informational result; do not terminate the interactive shell.
 exit 0

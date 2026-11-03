@@ -1,4 +1,0 @@
-# One actual SecureEdge critical systemd service per line.
-# Example (replace with the actual unit name after image inspection):
-# secureedge-agent.service
-# Empty by design: the health check must fail until configured.

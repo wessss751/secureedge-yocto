@@ -74,8 +74,6 @@ with tempfile.TemporaryDirectory(
     assert "boot_partition=3" in confirmed
     print("PASS: actual FAT A -> B")
 
-    # For the reverse direction, use the confirmed B image
-    # as the next transaction's source.
     reverse = root / "reverse"
     reverse.mkdir()
     (reverse / ".secureedge-fat-lab").touch()
@@ -100,7 +98,6 @@ with tempfile.TemporaryDirectory(
     assert restored == initial
     print("PASS: actual FAT B -> A")
 
-    # Deliberately corrupt an offline copy.
     broken = root / "broken"
     broken.mkdir()
     (broken / ".secureedge-fat-lab").touch()

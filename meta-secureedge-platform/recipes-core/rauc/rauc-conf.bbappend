@@ -1,9 +1,6 @@
-# SecureEdge - RAUC device-specific configuration
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-# Enable the custom RAUC backend only for laboratory builds.
-# Production keeps bootloader=noop.
 SECUREEDGE_RAUC_CUSTOM_TEST ?= "0"
 
 do_install:append() {
@@ -32,9 +29,7 @@ do_install:append() {
     fi
 }
 
-# Install the trial preflight helper only in custom RAUC lab builds.
 
-# SecureEdge external boot orchestration profile.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI:append = " file://system-orchestrated.conf"
 

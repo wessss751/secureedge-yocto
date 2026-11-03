@@ -6,7 +6,6 @@ fail() {
     exit 1
 }
 
-# This helper must never operate on real hardware.
 [ "${SECUREEDGE_TEST_MODE:-0}" = "1" ] ||
     fail "Simulation mode required"
 
@@ -19,7 +18,6 @@ BACKEND="$1"
 [ -n "${SECUREEDGE_STATE_DIR:-}" ] ||
     fail "Simulation state directory required"
 
-# Forbid real SecureEdge state storage.
 case "$SECUREEDGE_STATE_DIR" in
     /data|/data/*|/bootctl|/bootctl/*)
         fail "Real storage forbidden"

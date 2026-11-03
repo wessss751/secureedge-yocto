@@ -15,7 +15,6 @@ fail() {
 [ "$(id -u)" -eq 0 ] ||
     fail "Root privileges required"
 
-# Never allow laboratory overrides in hardware checks.
 [ "${SECUREEDGE_TEST_MODE:-0}" != "1" ] ||
     fail "Test mode forbidden"
 
@@ -31,7 +30,6 @@ fail() {
 [ -x "$BACKEND" ] ||
     fail "Backend unavailable"
 
-# DATA must be mounted as persistent ext4.
 awk '$2 == "/data" && $3 == "ext4" {ok=1}
      END {exit !ok}' /proc/mounts ||
     fail "DATA not mounted"
@@ -70,8 +68,6 @@ esac
 [ "$("$BACKEND" get-state "$PRIMARY")" = "good" ] ||
     fail "Recovery slot not good"
 
-# This checks the current transaction state only.
-# It does not prove the OTA images were completely installed.
 printf 'PRIMARY=%s\n' "$PRIMARY"
 printf 'CURRENT=%s\n' "$CURRENT"
 printf 'TRIAL=%s\n' "$TRIAL"

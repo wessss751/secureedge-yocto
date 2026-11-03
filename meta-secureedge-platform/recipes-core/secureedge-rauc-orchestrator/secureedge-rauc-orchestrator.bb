@@ -1,5 +1,6 @@
 SUMMARY = "SecureEdge RAUC installation coordinator"
-LICENSE = "CLOSED"
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
 SRC_URI = "file://secureedge-rauc-orchestrator file://secureedge-rauc-transaction-check"
 
@@ -32,7 +33,6 @@ do_install:append() {
 
 FILES:${PN}:append = " ${sbindir}/secureedge-rauc-target-verify"
 
-# Signed-bundle-bound, read-only partition audit (no boot activation).
 SRC_URI:append = " file://secureedge-rauc-signed-target-verify"
 do_install:append() {
     install -m 0755 \
@@ -41,7 +41,6 @@ do_install:append() {
 }
 FILES:${PN}:append = " ${sbindir}/secureedge-rauc-signed-target-verify"
 
-# Hardware installation service: installed but never auto-enabled.
 SRC_URI:append = " file://secureedge-rauc-install.service"
 
 inherit systemd
@@ -59,7 +58,6 @@ do_install:append() {
 
 FILES:${PN}:append = " ${systemd_system_unitdir}/secureedge-rauc-install.service"
 
-# Fail-closed A->B activation, hardware disabled until privileged lab approval.
 SRC_URI:append = " file://secureedge-rauc-activation"
 do_install:append() {
     install -m 0755 \
@@ -68,7 +66,6 @@ do_install:append() {
 }
 FILES:${PN}:append = " ${sbindir}/secureedge-rauc-activation"
 
-# LAB-only BOOTCTL confirmation tool; deliberately no auto-enabled service.
 SRC_URI:append = " file://secureedge-rauc-confirm-lab"
 do_install:append() {
     install -m 0755 \

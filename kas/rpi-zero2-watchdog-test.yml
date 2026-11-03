@@ -6,11 +6,8 @@ header:
 
 local_conf_header:
   secureedge-watchdog-test: |
-    # Isolated watchdog test profile
     SECUREEDGE_WATCHDOG_TEST:pn-secureedge-watchdog = "1"
 
-    # Install the watchdog configuration package
     IMAGE_INSTALL:append:pn-secureedge-image-rpi-prod = " secureedge-watchdog"
 
-    # Distinguish the test artifact from the normal image
     IMAGE_NAME:append:pn-secureedge-image-rpi-prod = "-watchdog-test"

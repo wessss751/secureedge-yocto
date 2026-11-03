@@ -1,4 +1,3 @@
-# SecureEdge critical boot services
 data.mount
 bootctl.mount
 secureedge-data-init.service

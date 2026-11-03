@@ -22,7 +22,7 @@ BASE = Path('/data/secureedge-rauc')
 RECORD = BASE / 'last-install.json'
 PENDING = BASE / 'bootstate/pending-slot'
 BOOTCTL = Path('/bootctl/autoboot.txt')
-LOCK = BASE / 'activation.lock'  # same lock as one-shot activation
+LOCK = BASE / 'activation.lock'
 APPROVAL = Path('/etc/secureedge/rauc-confirm-lab.enabled')
 RECOVERY_APPROVAL = Path('/etc/secureedge/rauc-recovery-qualified.enabled')
 TELEMETRY = BASE / 'telemetry-lab-receipt.json'
@@ -65,7 +65,6 @@ def firmware(field):
 
 
 def check_bootctl(content):
-    # Explicit canonical shape rather than forgiving unanticipated directives.
     c = content.replace('\r\n', '\n').strip() + '\n'
     if c != A_CONFIG:
         blocked('Primary A BOOTCTL configuration is not canonical')
@@ -147,7 +146,6 @@ def readiness(require_mqtt=True):
     if 'HEALTH=PASS' not in health.splitlines():
         blocked('Health gate not passed')
     if require_mqtt:
-        # This receipt is a human LAB attestation, not cryptographic broker evidence.
         regular_root(TELEMETRY)
         if TELEMETRY.stat().st_size > 4096:
             blocked('Oversized lab receipt')
@@ -169,7 +167,6 @@ def confirm_commit(record):
         blocked('BOOTCTL must be mounted FAT rw')
     old = BOOTCTL.read_bytes()
     check_bootctl(old.decode('ascii'))
-    # State on DATA before touching FAT; does not make FAT writing atomic.
     payload = {'schema': 1, 'state': 'updating_fat',
                'old_sha256': hashlib.sha256(old).hexdigest(),
                'new_sha256': hashlib.sha256(B_CONFIG.encode('ascii')).hexdigest(),
@@ -179,7 +176,6 @@ def confirm_commit(record):
     tmp = BOOTCTL.with_name('autoboot.secureedge-new')
     if tmp.exists() or tmp.is_symlink():
         blocked('Stale BOOTCTL temporary file')
-    # FAT rename improves normal operation but is NOT power-cut atomic.
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'wb') as f:
         f.write(B_CONFIG.encode('ascii'))
@@ -191,8 +187,6 @@ def confirm_commit(record):
         blocked('BOOTCTL reread failed; manual recovery required')
     payload['state'] = 'fat_written_verified'
     atomic_state(JOURNAL, payload)
-    # Do not remove pending marker in this phase: it is evidence until
-    # a separate normal-B boot reconciliation after reboot.
     print('LAB_BOOTCTL_COMMIT_WRITTEN=YES')
     print('POWER_CUT_ATOMICITY_PROVEN=NO')
     print('NORMAL_REBOOT_REQUIRED=YES')
@@ -237,8 +231,6 @@ def finalize_normal_b():
         blocked('Unverified candidate or conflicting confirmation')
     if cmd(['systemctl', 'is-active', 'secureedge-agent.service']).strip() != 'active':
         blocked('Agent not active on normal B')
-    # Lab telemetry was operator-verified before FAT was updated; this is not
-    # a remotely authenticated receipt or production telemetry monitor.
     regular_root(TELEMETRY)
     receipt = json.loads(TELEMETRY.read_text())
     if (receipt.get('bundle_sha256') != record['bundle_sha256'] or
@@ -273,7 +265,6 @@ def main():
     action.add_argument('--finalize', action='store_true')
     args = ap.parse_args()
     try:
-        # --check is strictly read-only, including the lock file.
         if args.check:
             fd = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW)
         else:

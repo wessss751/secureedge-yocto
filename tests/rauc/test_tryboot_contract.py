@@ -34,8 +34,6 @@ def read_boot_selection():
 
 
 def prepare_trial(normal, trial, candidate):
-    # Installing a new slot must not replace the
-    # known-good normal boot selection.
     if candidate != trial or candidate == normal:
         raise ValueError("Candidate must be inactive")
 
@@ -43,13 +41,9 @@ def prepare_trial(normal, trial, candidate):
 
 
 def confirm_trial(normal, trial, booted, tryboot, healthy):
-    # Confirmation requires an actual tryboot boot
-    # from the intended candidate and successful
-    # health checks.
     if not (tryboot and healthy and booted == trial):
         raise ValueError("Trial cannot be confirmed")
 
-    # Commit the new normal slot.
     return trial, normal
 
 

@@ -112,7 +112,6 @@ def main():
 
     root = Path(args.lab_root).absolute()
 
-    # An explicit laboratory marker is mandatory.
     marker = root / ".secureedge-offline-lab"
     if not marker.is_file() or marker.is_symlink():
         fail("Offline laboratory marker missing")

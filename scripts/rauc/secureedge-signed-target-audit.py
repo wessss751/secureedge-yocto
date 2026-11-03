@@ -118,9 +118,6 @@ def main():
     except json.JSONDecodeError:
         fail("Invalid authenticated RAUC metadata")
 
-    # RAUC JSON layouts vary by version. Do not guess image
-    # checksums, sizes, or target-slot mappings.
-    # A version-specific adapter must validate this structure.
     print("BUNDLE_SIGNATURE=VERIFIED")
     print("BUNDLE_TRANSACTION_HASH=MATCH")
     print("SIGNED_METADATA=AVAILABLE")

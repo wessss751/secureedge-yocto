@@ -49,5 +49,6 @@ COPYING.MIT is preserved unchanged. The root LICENSE grants MIT licensing for
 original SecureEdge-owned source, scripts, tests, configuration and documentation,
 subject to third-party exceptions described in the root README.md Licensing
 section. Third-party components and firmware retain their own license obligations.
-The 16 recipes declaring CLOSED remain unchanged and require separate ownership,
-payload and license-metadata review before complete alignment can be claimed.
+The 16 original SecureEdge recipes previously declaring CLOSED now declare MIT
+and checksum Yocto's common MIT text. This metadata alignment does not establish
+complete image or firmware redistribution compliance.

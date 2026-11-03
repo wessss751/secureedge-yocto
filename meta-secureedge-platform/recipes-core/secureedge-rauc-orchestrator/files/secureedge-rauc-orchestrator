@@ -219,11 +219,9 @@ def main():
             "bootctl_confirmed": False,
         }
 
-        # Must become durable BEFORE invoking RAUC.
         atomic_record(record)
 
         try:
-            # RAUC verifies the signed bundle during installation.
             result = run(["/usr/bin/rauc", "-d", "install", str(bundle)])
             rc = result.returncode
         except (OSError, subprocess.SubprocessError):

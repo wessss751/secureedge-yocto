@@ -28,7 +28,6 @@ class BackendFixtureMixin:
 
         tools = self.directory / "bin"
         tools.mkdir()
-        # The backend calls sync; fixtures must not request a host-wide flush.
         sync = tools / "sync"
         sync.write_text("#!/bin/sh\nexit 0\n")
         sync.chmod(0o700)

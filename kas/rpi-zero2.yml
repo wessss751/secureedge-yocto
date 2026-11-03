@@ -1,5 +1,4 @@
 
-# SecureEdge - Yocto configuration for Raspberry Pi Zero 2 W (64-bit)
 header:
   version: 19
 
@@ -48,6 +47,5 @@ local_conf_header:
     PARALLEL_MAKE = "-j 6"
     DL_DIR = "/workspace/.kas/downloads"
     SSTATE_DIR = "/workspace/.kas/sstate-cache"
-    # Raspberry Pi proprietary Wi-Fi firmware - lab acceptance
     LICENSE_FLAGS_ACCEPTED:append = " synaptics-killswitch"
     EXTRA_IMAGE_FEATURES:append = " debug-tweaks"

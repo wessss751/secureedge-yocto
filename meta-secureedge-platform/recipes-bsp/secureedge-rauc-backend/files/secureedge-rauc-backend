@@ -11,7 +11,6 @@ fail() {
     exit 1
 }
 
-# Strictly restrict external path overrides on real hardware.
 check_runtime_paths() {
     if [ "${SECUREEDGE_TEST_MODE:-0}" = "1" ]; then
         [ -n "${SECUREEDGE_BOOTCTL_DIR:-}" ] || fail "Test BOOTCTL directory required"
@@ -31,7 +30,6 @@ check_slot() {
     esac
 }
 
-# Read exactly one value from the specified autoboot.txt section.
 read_autoboot_value() {
     [ -f "$AUTOBOOT" ] && [ -r "$AUTOBOOT" ] || fail "Cannot read $AUTOBOOT"
     [ ! -L "$AUTOBOOT" ] || fail "autoboot.txt must not be a symlink"
@@ -91,7 +89,6 @@ get_tryboot_target() {
 get_current() {
     [ -f "$CMDLINE_FILE" ] && [ -r "$CMDLINE_FILE" ] || fail "Cannot read $CMDLINE_FILE"
     found_slot=""
-    # Kernel cmdline is whitespace-separated; globbing is deliberately disabled.
     set -f
     for arg in $(cat "$CMDLINE_FILE"); do
         case "$arg" in
@@ -128,7 +125,6 @@ get_state() {
     esac
 }
 
-# Prototype state persistence. No locking / power-cut guarantees yet.
 set_state() {
     [ "$#" -eq 2 ] || fail "Usage: set-state SLOT good|bad"
     check_slot "$1"
@@ -148,12 +144,9 @@ set_state() {
     trap - 0 1 2 3 15
 }
 
-# Simulation only: record a candidate. Does NOT arrange a real tryboot reboot.
 set_primary() {
     [ "$#" -eq 1 ] || fail "Usage: set-primary SLOT"
     check_slot "$1"
-    # Hardware staging is disabled unless explicitly provisioned.
-    # This only records a candidate; it does not reboot or confirm.
     if [ "${SECUREEDGE_TEST_MODE:-0}" != "1" ]; then
         marker="/etc/secureedge/rauc-hardware-staging.enabled"
 
@@ -199,7 +192,6 @@ set_primary() {
     printf 'Prepared trial slot: %s\n' "$requested_slot" >&2
 }
 
-# Firmware Device Tree values are 4-byte unsigned big-endian integers.
 read_fw_u32() {
     fw_file="$1"
     [ -f "$fw_file" ] && [ -r "$fw_file" ] || fail "Cannot read firmware property: $fw_file"
@@ -210,7 +202,6 @@ read_fw_u32() {
     printf '%d\n' "0x$fw_hex"
 }
 
-# Read-only diagnostic, not a RAUC standard backend action.
 verify_tryboot() {
     [ "$#" -eq 0 ] || fail "Usage: verify-tryboot"
     check_runtime_paths

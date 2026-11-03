@@ -86,8 +86,6 @@ def main():
         print("BOOTCTL_MODIFIED=NO")
         return 0
 
-    # A future verified state requires a separate authenticated
-    # verification protocol. This utility cannot grant permission.
     return fail("No trusted target verification protocol installed")
 
 

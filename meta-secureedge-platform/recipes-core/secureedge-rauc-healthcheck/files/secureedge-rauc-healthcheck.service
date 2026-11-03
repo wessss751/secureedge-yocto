@@ -12,6 +12,5 @@ ProtectSystem=strict
 ProtectHome=yes
 ReadOnlyPaths=/data
 
-# Deliberately not enabled at boot.
 [Install]
 WantedBy=multi-user.target

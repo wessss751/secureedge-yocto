@@ -76,11 +76,11 @@ and [distribution](meta-secureedge-distro/COPYING.MIT) MIT notices are preserved
 unchanged. External Yocto layers and their payloads retain their own licenses;
 firmware license acceptance does not establish redistribution permission.
 
-**Recipe metadata remains inconsistent with this licensing decision:** 16 recipes
-still declare `LICENSE = "CLOSED"`. Those declarations are unchanged. A separate
-review must establish each recipe's source and payload ownership, applicable
-licenses, third-party obligations and required Yocto license/checksum metadata
-before updating those declarations or claiming complete license alignment.
+The 16 SecureEdge-owned recipes previously declaring `CLOSED` now declare
+`LICENSE = "MIT"` and reference Yocto's common MIT license text through
+`LIC_FILES_CHKSUM`. This aligns those recipes with the approved original-material
+scope; it does not change third-party licenses or establish complete image or
+firmware redistribution compliance.
 
 GitHub publication requires separate owner approval and is not authorized by
 this licensing decision.

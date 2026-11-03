@@ -26,7 +26,6 @@ def main():
         source.write_bytes(FIXTURE.read_bytes())
         old_data = source.read_bytes()
 
-        # Generate a candidate using the existing strict renderer.
         result = subprocess.run(
             [
                 "python3", str(RENDERER),
@@ -40,18 +39,14 @@ def main():
         candidate.write_bytes(result.stdout)
         new_data = candidate.read_bytes()
 
-        # In a real implementation these would be persisted
-        # with a carefully designed recovery protocol.
         journal.write_text(
             "phase=prepared\n"
             f"old_sha256={sha256(old_data)}\n"
             f"new_sha256={sha256(new_data)}\n"
         )
 
-        # The original remains untouched until the commit point.
         assert source.read_bytes() == old_data
 
-        # Simulated commit on a temporary filesystem.
         os.replace(candidate, source)
 
         assert source.read_bytes() == new_data

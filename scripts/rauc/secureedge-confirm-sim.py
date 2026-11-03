@@ -94,8 +94,6 @@ def main():
         assert verification == "verified-tryboot=system1"
 
         print("=== 4. SIMULATED HEALTH GATE ===")
-        # This is an explicit test-only health result.
-        # It is NOT evidence that real services are healthy.
         simulated_health_ok = True
         assert simulated_health_ok
 
@@ -117,7 +115,6 @@ def main():
             "boot_partition=2"
         )
 
-        # Do not modify the source autoboot.txt.
         assert run("sh", str(BACKEND), "get-primary", env=env) == "system0"
 
         print(result)

@@ -44,7 +44,6 @@ class WatchdogConfigTests(unittest.TestCase):
         self.assertIn('SECUREEDGE_WATCHDOG_TEST ?= "0"', recipe)
         match = re.search(r"^do_install\(\) \{\n(.*?)^\}", recipe, re.M | re.S)
         self.assertIsNotNone(match, "Missing install task")
-        # Exercise only this reviewed install body, with all destinations under /tmp.
         for flag, source in (("0", "60-secureedge-watchdog.conf"),
                              ("1", "60-secureedge-watchdog-test.conf")):
             with self.subTest(flag=flag), tempfile.TemporaryDirectory(dir="/tmp") as directory:

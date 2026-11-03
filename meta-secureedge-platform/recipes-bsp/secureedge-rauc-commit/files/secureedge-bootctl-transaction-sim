@@ -92,7 +92,6 @@ def initialize(base):
     if base.exists():
         raise ValueError("Sandbox already exists")
 
-    # Restrict the laboratory to the OS temporary directory.
     import tempfile
     temp_root = Path(tempfile.gettempdir()).resolve()
     if temp_root not in base.parents:
@@ -178,7 +177,6 @@ def recover(base):
         write_journal(journal, record)
         raise ValueError("Corrupted BOOTCTL; manual recovery required")
 
-    # LAB POLICY: roll back uncommitted transactions to A.
     durable_write(boot, INITIAL)
 
     if boot.read_text() != INITIAL:

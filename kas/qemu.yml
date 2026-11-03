@@ -1,5 +1,4 @@
 
-# SecureEdge - Initial Yocto configuration for QEMU ARM64
 
 header:
   version: 19

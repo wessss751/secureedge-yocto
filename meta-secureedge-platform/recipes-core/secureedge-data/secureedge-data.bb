@@ -1,7 +1,8 @@
 SUMMARY = "SecureEdge persistent DATA partition setup"
 DESCRIPTION = "Mount and initialize persistent DATA for SecureEdge and RAUC"
 
-LICENSE = "CLOSED"
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
 SRC_URI = " \
     file://data.mount \
@@ -18,10 +19,8 @@ SYSTEMD_SERVICE:${PN} = "data.mount secureedge-data-init.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 do_install() {
-    # Mount point in the root filesystem
     install -d -m 0755 ${D}/data
 
-    # systemd units
     install -d ${D}${systemd_system_unitdir}
 
     install -m 0644 \
@@ -32,14 +31,12 @@ do_install() {
         ${WORKDIR}/secureedge-data-init.service \
         ${D}${systemd_system_unitdir}/secureedge-data-init.service
 
-    # RAUC service dependency
     install -d ${D}${systemd_system_unitdir}/rauc.service.d
 
     install -m 0644 \
         ${WORKDIR}/rauc-data.conf \
         ${D}${systemd_system_unitdir}/rauc.service.d/10-secureedge-data.conf
 
-    # Initialization script
     install -d ${D}${sbindir}
 
     install -m 0755 \

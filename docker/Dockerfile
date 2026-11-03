@@ -1,5 +1,4 @@
 
-# SecureEdge - Yocto build environment
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -43,7 +42,6 @@ ENV LC_ALL=en_US.UTF-8
 
 WORKDIR /workspace
 
-# Install KAS inside an isolated Python environment
 RUN python3 -m venv /opt/kas-venv
 
 RUN /opt/kas-venv/bin/pip install --no-cache-dir "kas==4.8"

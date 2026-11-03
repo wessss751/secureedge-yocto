@@ -1,6 +1,4 @@
 #!/bin/sh
-# SecureEdge RAUC trial-boot readiness check (read-only).
-# NEVER confirms a slot or changes boot configuration.
 set -eu
 
 fail() {
@@ -15,7 +13,6 @@ MOUNTS=/proc/mounts
 UNITS=/etc/secureedge/rauc-healthcheck.units
 SYSTEMCTL=systemctl
 
-# Test overrides are accepted only in explicit host-simulation mode.
 if [ "${SECUREEDGE_HEALTH_TEST_MODE:-0}" = "1" ]; then
     BACKEND="${SECUREEDGE_HEALTH_BACKEND:-$BACKEND}"
     MOUNTS="${SECUREEDGE_HEALTH_MOUNTS:-$MOUNTS}"
@@ -28,19 +25,15 @@ fi
 [ -f "$UNITS" ] && [ -r "$UNITS" ] || fail "Service list unavailable"
 [ ! -L "$UNITS" ] || fail "Service list cannot be a symlink"
 
-# A /data directory without a real ext4 mount must not count as healthy.
 awk '$2 == "/data" && $3 == "ext4" { found = 1 } END { exit !found }' "$MOUNTS" \
     || fail "DATA is not mounted as ext4 at /data"
 
-# The backend checks firmware tryboot, boot partition, kernel root,
-# running RAUC slot, pending slot, and the recovery slot state.
 identity="$("$BACKEND" verify-tryboot)" || fail "tryboot identity verification failed"
 case "$identity" in
     verified-tryboot=system0|verified-tryboot=system1) ;;
     *) fail "Unexpected identity response" ;;
 esac
 
-# One service name per line. Missing configuration fails closed.
 checked=0
 while IFS= read -r unit || [ -n "$unit" ]; do
     case "$unit" in

@@ -83,7 +83,6 @@ def bootctl_primary_a():
 
 
 def device_size(fd):
-    # Linux BLKGETSIZE64
     return struct.unpack('Q', fcntl.ioctl(fd, 0x80081272, b'\x00' * 8))[0]
 
 
