@@ -18,7 +18,7 @@
 
 ## Public release decisions
 
-- Review ownership, payload licenses, third-party/firmware obligations and Yocto license/checksum metadata for the 16 recipes still declaring `CLOSED`. The [approved MIT scope](../README.md#licensing) covers original SecureEdge-owned material; complete recipe-license alignment remains pending.
+- Review third-party and firmware redistribution obligations for release artifacts. The 16 original SecureEdge recipes now have MIT license/checksum metadata consistent with the [approved MIT scope](../README.md#licensing); this does not establish complete image compliance.
 - Obtain separate owner approval before GitHub publication.
 - Review local experimental work and identify the versioned inputs required for reproduction.
 - Define signing-key custody, trust-anchor and certificate-lifecycle policies.
